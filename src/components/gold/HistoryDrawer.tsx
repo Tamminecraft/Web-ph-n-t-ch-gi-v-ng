@@ -50,7 +50,7 @@ export function HistoryDrawer({
               <SelectItem value="ALL">Tất cả mô hình</SelectItem>
               <SelectItem value="LSTM">LSTM</SelectItem>
               <SelectItem value="ARIMA">ARIMA</SelectItem>
-              <SelectItem value="LSTM_ARIMA">LSTM + ARIMA</SelectItem>
+              <SelectItem value="LSTM_ARIMA">Mô hình kết hợp LSTM_ARIMA</SelectItem>
             </SelectContent>
           </Select>
           <Button

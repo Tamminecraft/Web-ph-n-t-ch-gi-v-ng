@@ -1,3 +1,4 @@
+import './i18n';  // thêm dòng này ngay đầu file, sau các import React
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'

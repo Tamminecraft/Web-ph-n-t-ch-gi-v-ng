@@ -22,9 +22,9 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "AI Gold Predictor — Dự đoán giá vàng bằng LSTM & ARIMA" },
+      { title: "Gold Predictor — Dự đoán giá vàng bằng LSTM & ARIMA" },
       { name: "description", content: "Phân tích và dự đoán giá vàng bằng mô hình AI LSTM & ARIMA với biểu đồ trực quan, chỉ số RMSE/MAPE và đề xuất chiến lược." },
-      { property: "og:title", content: "AI Gold Predictor" },
+      { property: "og:title", content: "Gold Predictor" },
       { property: "og:description", content: "Dự đoán giá vàng với LSTM & ARIMA — biểu đồ, chỉ số đánh giá và gợi ý từ AI." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -143,7 +143,7 @@ function Header({
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gradient-title leading-tight">
-            AI Gold Predictor
+          Gold Predictor
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
             Phân tích giá vàng bằng mô hình LSTM &amp; ARIMA
@@ -356,7 +356,7 @@ function AIInsights({ result }: { result: PredictionResult }) {
           <Sparkles className="w-6 h-6 text-foreground" />
         </div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-lg font-semibold">Đề xuất từ AI</h2>
+          <h2 className="text-lg font-semibold">Đề xuất từ mô hình phân tích tích hợp AI</h2>
           <p className="text-sm text-muted-foreground">Phân tích dựa trên kết quả mô hình hiện tại.</p>
 
           <div className="grid sm:grid-cols-2 gap-4 mt-4">
@@ -374,7 +374,7 @@ function AIInsights({ result }: { result: PredictionResult }) {
           <div className="mt-4 flex items-start gap-2 text-xs text-muted-foreground border-t border-border pt-3">
             <AlertTriangle className="w-4 h-4 text-gold-dark shrink-0 mt-0.5" />
             <span>
-              <b>Lưu ý:</b> Dự báo từ AI chỉ mang tính chất tham khảo, không phải lời khuyên đầu tư tài chính.
+              <b>Lưu ý:</b> Dự báo từ các mô hình phân tích chỉ mang tính chất tham khảo, không phải lời khuyên đầu tư tài chính mang tính chính xác 100%.
             </span>
           </div>
         </div>

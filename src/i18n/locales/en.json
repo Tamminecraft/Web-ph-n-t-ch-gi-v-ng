@@ -1,0 +1,16 @@
+{
+  "nav": { "home": "Home", "analysis": "Analysis", "login": "Login", "register": "Sign Up", "logout": "Logout" },
+  "auth": {
+    "login": "Login", "register": "Sign Up", "email": "Email", "password": "Password",
+    "confirmPassword": "Confirm Password", "forgotPassword": "Forgot password?",
+    "loginWithGoogle": "Sign in with Google", "orContinueWith": "or continue with",
+    "sendOtp": "Send OTP", "otpCode": "OTP Code (6 digits)", "newPassword": "New Password",
+    "resetPassword": "Reset Password", "backToLogin": "Back to login",
+    "noAccount": "No account?", "hasAccount": "Already have an account?"
+  },
+  "chatbot": {
+    "title": "Golden Ring", "subtitle": "Finance & Gold Expert",
+    "placeholder": "Ask about gold, investment, economy...", "send": "Send",
+    "welcome": "Greetings! I am the Magical Golden Ring. What would you like to know about the gold market today?"
+  }
+}

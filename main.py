@@ -23,17 +23,194 @@ app.add_middleware(
 # --- 1. LOAD MÔ HÌNH VÀ SCALER ---
 print("--- Đang nạp các mô hình AI ---")
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
+os.makedirs(MODEL_DIR, exist_ok=True)
 
+# Helper to resolve model URLs from environment variables or fallbacks
+def resolve_model_url(env_name: str, default: str | None = None):
+    v = os.getenv(env_name)
+    if v:
+        return v
+    return default
+
+# Default: use the file ids you provided as direct-download Drive links
+DEFAULT_LSTM_ID = "1ES_c67PW5Gn68ZPvTGVOcbkNURF8ony7"
+DEFAULT_SCALER_ID = "1t3QvzAkP26zxK52LHUACf_F0PkeaGnkG"
+DEFAULT_ARIMA_ID = "14Qxre6r9fn7zxgZGIK-VM7mNIzSTlrfn"
+DEFAULT_ARIMA_SCALER_ID = "1ouKRCESFQhdbIBhTLVoEd7hOAcdow9Ns"
+DEFAULT_LSTM_ARIMA_ID = "17GWnLB35mXALkwt7xphwAG7Oe_gRF0Tx"
+DEFAULT_LSTM_ARIMA_SCALER_ID = "1ydpjbHvDgO_tc2WkUyb91tZeZ3GUqX9s"
+DEFAULT_LSTM_URL = f"https://drive.google.com/uc?export=download&id={DEFAULT_LSTM_ID}"
+DEFAULT_SCALER_URL = f"https://drive.google.com/uc?export=download&id={DEFAULT_SCALER_ID}"
+DEFAULT_ARIMA_URL = f"https://drive.google.com/uc?export=download&id={DEFAULT_ARIMA_ID}"
+DEFAULT_ARIMA_SCALER_URL = f"https://drive.google.com/uc?export=download&id={DEFAULT_ARIMA_SCALER_ID}"
+DEFAULT_LSTM_ARIMA_URL = f"https://drive.google.com/uc?export=download&id={DEFAULT_LSTM_ARIMA_ID}"
+DEFAULT_LSTM_ARIMA_SCALER_URL = f"https://drive.google.com/uc?export=download&id={DEFAULT_LSTM_ARIMA_SCALER_ID}"
+
+LSTM_MODEL_URL = resolve_model_url("LSTM_MODEL_URL", DEFAULT_LSTM_URL)
+SCALER_URL = resolve_model_url("SCALER_URL", DEFAULT_SCALER_URL)
+ARIMA_URL = resolve_model_url("ARIMA_URL", DEFAULT_ARIMA_URL)
+ARIMA_SCALER_URL = resolve_model_url("ARIMA_SCALER_URL", DEFAULT_ARIMA_SCALER_URL)
+LSTM_ARIMA_URL = resolve_model_url("LSTM_ARIMA_URL", DEFAULT_LSTM_ARIMA_URL)
+LSTM_ARIMA_SCALER_URL = resolve_model_url("LSTM_ARIMA_SCALER_URL", DEFAULT_LSTM_ARIMA_SCALER_URL)
+
+ARIMA_USE_SCALER = os.getenv("ARIMA_USE_SCALER", "false").lower() in ("1", "true", "yes")
+ARIMA_USE_LOG = os.getenv("ARIMA_USE_LOG", "false").lower() in ("1", "true", "yes")
+
+if ARIMA_USE_LOG:
+    print("⚙️ ARIMA sẽ áp dụng log-exp reverse transform sau khi dự báo")
+if ARIMA_USE_SCALER:
+    print("⚙️ ARIMA sẽ áp dụng inverse_transform với arima_scaler.pkl nếu có")
+
+def download_file(url: str, dest_path: str) -> bool:
+    """Download `url` to `dest_path`. Prefer gdown for Drive links."""
+    if not url:
+        return False
+    try:
+        if "drive.google.com" in url or "uc?export=download" in url:
+            gdown = None
+            try:
+                import importlib
+                gdown = importlib.import_module("gdown")
+            except Exception:
+                try:
+                    import subprocess
+                    subprocess.check_call(["pip", "install", "gdown"])
+                    import importlib
+                    gdown = importlib.import_module("gdown")
+                except Exception:
+                    gdown = None
+            if gdown:
+                try:
+                    gdown.download(url, dest_path, quiet=False)
+                except Exception:
+                    from urllib.request import urlretrieve
+                    urlretrieve(url, dest_path)
+            else:
+                from urllib.request import urlretrieve
+                urlretrieve(url, dest_path)
+        else:
+            from urllib.request import urlretrieve
+            urlretrieve(url, dest_path)
+        return os.path.exists(dest_path)
+    except Exception as exc:
+        print(f"❌ Lỗi khi tải file từ {url}: {exc}")
+        return False
+
+
+def download_or_redownload(url: str, dest_path: str, description: str):
+    if os.path.exists(dest_path):
+        try:
+            os.remove(dest_path)
+        except Exception:
+            pass
+    if url:
+        print(f"Đang tải lại {description} từ: {url}")
+        download_file(url, dest_path)
+
+
+print("--- Kiểm tra và tải model nếu cần ---")
+lstm_path = os.path.join(MODEL_DIR, "lstm_model.h5")
+scaler_path = os.path.join(MODEL_DIR, "scaler_final.pkl")
+arima_path = os.path.join(MODEL_DIR, "arima_model.pkl")
+arima_scaler_path = os.path.join(MODEL_DIR, "arima_scaler.pkl")
+lstm_arima_path = os.path.join(MODEL_DIR, "lstm_arima_model.h5")
+lstm_arima_scaler_path = os.path.join(MODEL_DIR, "lstm_arima_scaler.pkl")
+
+if not os.path.exists(lstm_path) and LSTM_MODEL_URL:
+    print(f"Đang tải LSTM từ: {LSTM_MODEL_URL}")
+    download_file(LSTM_MODEL_URL, lstm_path)
+
+if not os.path.exists(scaler_path) and SCALER_URL:
+    print(f"Đang tải Scaler từ: {SCALER_URL}")
+    download_file(SCALER_URL, scaler_path)
+
+if not os.path.exists(arima_path) and ARIMA_URL:
+    print(f"Đang tải ARIMA từ: {ARIMA_URL}")
+    download_file(ARIMA_URL, arima_path)
+
+if not os.path.exists(arima_scaler_path) and ARIMA_SCALER_URL:
+    print(f"Đang tải Scaler ARIMA từ: {ARIMA_SCALER_URL}")
+    download_file(ARIMA_SCALER_URL, arima_scaler_path)
+
+if not os.path.exists(lstm_arima_path) and LSTM_ARIMA_URL:
+    print(f"Đang tải LSTM_ARIMA từ: {LSTM_ARIMA_URL}")
+    download_file(LSTM_ARIMA_URL, lstm_arima_path)
+
+if not os.path.exists(lstm_arima_scaler_path) and LSTM_ARIMA_SCALER_URL:
+    print(f"Đang tải Scaler LSTM_ARIMA từ: {LSTM_ARIMA_SCALER_URL}")
+    download_file(LSTM_ARIMA_SCALER_URL, lstm_arima_scaler_path)
+
+# Try loading models; missing optional models will be set to None
+lstm_model = None
+scaler = None
+arima_model = None
+arima_scaler = None
+lstm_arima_model = None
+lstm_arima_scaler = None
 try:
-    lstm_model = tf.keras.models.load_model(
-        os.path.join(MODEL_DIR, "lstm_model.h5"), 
-        compile=False
-    )
-    scaler = joblib.load(os.path.join(MODEL_DIR, "scaler_final.pkl"))
-
-    with open(os.path.join(MODEL_DIR, "arima_model.pkl"), "rb") as f:
-        arima_model = pickle.load(f)
-    print(">>> Nạp tất cả mô hình AI thành công!")
+    if os.path.exists(lstm_path):
+        lstm_model = tf.keras.models.load_model(lstm_path, compile=False)
+        print(">>> Nạp LSTM thành công từ:", lstm_path)
+    else:
+        print("⚠️ Không tìm thấy file LSTM ở", lstm_path)
+    if os.path.exists(scaler_path):
+        scaler = joblib.load(scaler_path)
+        print(">>> Nạp Scaler thành công từ:", scaler_path)
+    else:
+        print("⚠️ Không tìm thấy file Scaler ở", scaler_path)
+    if os.path.exists(arima_path):
+        with open(arima_path, "rb") as f:
+            arima_model = pickle.load(f)
+        print(">>> Nạp ARIMA thành công từ:", arima_path)
+    else:
+        print("⚠️ Không tìm thấy file ARIMA ở", arima_path)
+    if os.path.exists(arima_scaler_path):
+        try:
+            arima_scaler = joblib.load(arima_scaler_path)
+            if not hasattr(arima_scaler, 'inverse_transform'):
+                raise ValueError("File Scaler ARIMA không có inverse_transform")
+            print(">>> Nạp Scaler ARIMA thành công từ:", arima_scaler_path)
+        except Exception as exc:
+            print(f"⚠️ Scaler ARIMA không hợp lệ: {exc}")
+            arima_scaler = None
+            if ARIMA_USE_SCALER and ARIMA_SCALER_URL:
+                download_or_redownload(ARIMA_SCALER_URL, arima_scaler_path, "Scaler ARIMA")
+                try:
+                    arima_scaler = joblib.load(arima_scaler_path)
+                    print(">>> Nạp lại Scaler ARIMA thành công từ:", arima_scaler_path)
+                except Exception as exc2:
+                    print(f"❌ Không thể nạp lại Scaler ARIMA: {exc2}")
+                    arima_scaler = None
+    else:
+        print("⚠️ Không tìm thấy file Scaler ARIMA ở", arima_scaler_path)
+        if ARIMA_USE_SCALER and ARIMA_SCALER_URL:
+            download_or_redownload(ARIMA_SCALER_URL, arima_scaler_path, "Scaler ARIMA")
+            try:
+                arima_scaler = joblib.load(arima_scaler_path)
+                print(">>> Nạp Scaler ARIMA thành công từ:", arima_scaler_path)
+            except Exception as exc2:
+                print(f"❌ Không thể nạp Scaler ARIMA: {exc2}")
+                arima_scaler = None
+    if os.path.exists(lstm_arima_path):
+        try:
+            lstm_arima_model = tf.keras.models.load_model(lstm_arima_path, compile=False)
+            print(">>> Nạp LSTM_ARIMA thành công từ:", lstm_arima_path)
+        except Exception as exc:
+            print(f"⚠️ Lỗi nạp LSTM_ARIMA: {exc}")
+            download_or_redownload(LSTM_ARIMA_URL, lstm_arima_path, "LSTM_ARIMA")
+            try:
+                lstm_arima_model = tf.keras.models.load_model(lstm_arima_path, compile=False)
+                print(">>> Nạp lại LSTM_ARIMA thành công từ:", lstm_arima_path)
+            except Exception as exc2:
+                print(f"❌ Không thể nạp lại LSTM_ARIMA: {exc2}")
+                lstm_arima_model = None
+    else:
+        print("⚠️ Không tìm thấy file LSTM_ARIMA ở", lstm_arima_path)
+    if os.path.exists(lstm_arima_scaler_path):
+        lstm_arima_scaler = joblib.load(lstm_arima_scaler_path)
+        print(">>> Nạp Scaler LSTM_ARIMA thành công từ:", lstm_arima_scaler_path)
+    else:
+        print("⚠️ Không tìm thấy file Scaler LSTM_ARIMA ở", lstm_arima_scaler_path)
 except Exception as e:
     print(f"❌ Lỗi nạp mô hình: {e}")
 
@@ -43,9 +220,14 @@ class PredictRequest(BaseModel):
 
 # --- 2. HÀM DỰ ĐOÁN LSTM (XỬ LÝ LỆCH SCALER 1 CỘT & LSTM 9 CỘT) ---
 # --- 2. HÀM DỰ ĐOÁN LSTM (FIX LỖI RỚT GIÁ ĐỘT NGỘT) ---
-def predict_lstm(close_prices, days):
+def predict_lstm(close_prices, days, model=None, model_scaler=None):
+    if model is None:
+        model = lstm_model
+    if model_scaler is None:
+        model_scaler = scaler
+
     try:
-        input_shape = lstm_model.input_shape
+        input_shape = model.input_shape
         if isinstance(input_shape, list):
             input_shape = input_shape[0]
         
@@ -57,7 +239,7 @@ def predict_lstm(close_prices, days):
 
     # 1. Lấy dữ liệu và CHUẨN HÓA 1 CỘT (Vì Scaler chỉ nhận đúng 1 cột)
     recent_prices = close_prices[-seq_len:].reshape(-1, 1)
-    recent_scaled = scaler.transform(recent_prices)
+    recent_scaled = model_scaler.transform(recent_prices)
     
     # 2. BƠM CHÍNH GIÁ TRỊ CLOSE VÀO CÁC CỘT CÒN LẠI (Thay vì số 0)
     if num_features > 1:
@@ -72,7 +254,7 @@ def predict_lstm(close_prices, days):
     
     predictions_scaled = []
     for _ in range(days):
-        pred_raw = lstm_model.predict(curr_input, verbose=0)
+        pred_raw = model.predict(curr_input, verbose=0)
         pred_val = float(pred_raw.flatten()[0])
         predictions_scaled.append(pred_val)
         
@@ -82,15 +264,41 @@ def predict_lstm(close_prices, days):
 
     # 4. Giải chuẩn hóa (Đưa lại về 1 cột cho Scaler dịch ngược ra giá tiền)
     preds_array = np.array(predictions_scaled).reshape(-1, 1)
-    unscaled = scaler.inverse_transform(preds_array)
+    unscaled = model_scaler.inverse_transform(preds_array)
     
     return unscaled.flatten()
 
+def predict_lstm_arima(close_prices, days):
+    if lstm_arima_model is None:
+        raise RuntimeError("LSTM_ARIMA model chưa được nạp")
+    return predict_lstm(close_prices, days, model=lstm_arima_model, model_scaler=lstm_arima_scaler)
+
 def predict_arima(days):
-    forecast = arima_model.forecast(steps=days)
-    if hasattr(forecast, 'values'):
-        return forecast.values
-    return forecast
+    if arima_model is None:
+        raise RuntimeError("ARIMA model chưa được nạp")
+
+    try:
+        forecast = getattr(arima_model, 'get_forecast', arima_model.forecast)(steps=days)
+    except Exception:
+        forecast = arima_model.forecast(steps=days)
+
+    if hasattr(forecast, 'predicted_mean'):
+        forecast_values = np.asarray(forecast.predicted_mean)
+    elif hasattr(forecast, 'values'):
+        forecast_values = forecast.values
+    else:
+        forecast_values = np.asarray(forecast)
+
+    if ARIMA_USE_LOG:
+        forecast_values = np.exp(forecast_values)
+
+    if ARIMA_USE_SCALER and arima_scaler is not None:
+        try:
+            forecast_values = arima_scaler.inverse_transform(forecast_values.reshape(-1, 1)).flatten()
+        except Exception as exc:
+            print(f"⚠️ Không thể invert ARIMA scaler: {exc}")
+
+    return forecast_values
 
 # --- 3. ENDPOINT XỬ LÝ CHÍNH ---
 @app.post("/predict")
@@ -122,14 +330,17 @@ async def predict_gold_price(request: PredictRequest):
             forecast_values = [round(float(x), 2) for x in raw_preds]
 
         elif request.model_type == "LSTM_ARIMA":
-            lstm_preds = predict_lstm(close_prices, request.days_to_predict)
-            arima_preds = predict_arima(request.days_to_predict)
-            
-            # Kết hợp kết quả
-            forecast_values = [
-                round(float(0.5 * l + 0.5 * a), 2) 
-                for l, a in zip(lstm_preds, arima_preds)
-            ]
+            if lstm_arima_model is not None:
+                raw_preds = predict_lstm_arima(close_prices, request.days_to_predict)
+                forecast_values = [round(float(x), 2) for x in raw_preds]
+            else:
+                lstm_preds = predict_lstm(close_prices, request.days_to_predict)
+                arima_preds = predict_arima(request.days_to_predict)
+                # Kết hợp kết quả
+                forecast_values = [
+                    round(float(0.5 * l + 0.5 * a), 2)
+                    for l, a in zip(lstm_preds, arima_preds)
+                ]
 
         forecast_labels = [f"+{i+1}" for i in range(request.days_to_predict)]
         max_predicted_price = round(float(max(forecast_values)), 2)

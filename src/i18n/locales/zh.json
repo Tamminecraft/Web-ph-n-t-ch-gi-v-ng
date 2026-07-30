@@ -1,0 +1,16 @@
+{
+  "nav": { "home": "首页", "analysis": "分析", "login": "登录", "register": "注册", "logout": "登出" },
+  "auth": {
+    "login": "登录", "register": "注册", "email": "邮箱", "password": "密码",
+    "confirmPassword": "确认密码", "forgotPassword": "忘记密码?",
+    "loginWithGoogle": "使用 Google 登录", "orContinueWith": "或继续使用",
+    "sendOtp": "发送验证码", "otpCode": "验证码 (6位)", "newPassword": "新密码",
+    "resetPassword": "重置密码", "backToLogin": "返回登录",
+    "noAccount": "没有账户?", "hasAccount": "已有账户?"
+  },
+  "chatbot": {
+    "title": "黄金戒指", "subtitle": "金融与黄金专家",
+    "placeholder": "询问黄金、投资、经济...", "send": "发送",
+    "welcome": "您好!我是神奇的黄金戒指。今天您想了解黄金市场的什么?"
+  }
+}

@@ -34,7 +34,7 @@ const USERS_KEY = "gold_users_v1";
 export const modelLabel: Record<ModelType, string> = {
   LSTM: "Mô hình LSTM",
   ARIMA: "Mô hình ARIMA",
-  LSTM_ARIMA: "Lai (LSTM + ARIMA)",
+  LSTM_ARIMA: "Mô hình kết hợp LSTM_ARIMA",
 };
 
 export function loadHistory(): HistoryEntry[] {
