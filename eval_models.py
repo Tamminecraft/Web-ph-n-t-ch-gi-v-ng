@@ -1,62 +1,35 @@
 import numpy as np
-import pandas as pd
 import yfinance as yf
 import main
+from model_utils import run_rolling_backtest
 
 
-def mape(y_true, y_pred):
-    y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.asarray(y_pred, dtype=float)
-    mask = np.abs(y_true) > 1e-8
-    return np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100
+def evaluate_model(name, forecast_fn, horizon=5, window=24):
+    hist = yf.download('GC=F', period='2y', interval='1d')
+    close = hist['Close'].dropna().to_numpy(dtype=float)
+    if len(close) < window + horizon:
+        raise SystemExit('Not enough data')
+
+    result = run_rolling_backtest(close, horizon=horizon, window=window, forecast_fn=forecast_fn)
+    print(f'{name} windows={result["windows"]}')
+    print(f'{name} metrics={result["metrics"]}')
+    return result
 
 
-def metrics(y_true, y_pred):
-    y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.asarray(y_pred, dtype=float)
-    mae = np.mean(np.abs(y_true - y_pred))
-    rmse = np.sqrt(np.mean((y_true - y_pred) ** 2))
-    mape_val = mape(y_true, y_pred)
-    direction = np.mean(np.sign(np.diff(y_pred)) == np.sign(np.diff(y_true))) * 100
-    return {
-        'mae': round(float(mae), 2),
-        'rmse': round(float(rmse), 2),
-        'mape': round(float(mape_val), 2),
-        'direction_accuracy': round(float(direction), 2),
-    }
-
-hist = yf.download('GC=F', period='2y', interval='1d')
-close = hist['Close'].dropna().to_numpy()
-if len(close) < 90:
-    raise SystemExit('Not enough data')
-
-# Use the last 7 points as holdout and the preceding data as input history.
-cut = len(close) - 7
-history_before = close[:cut]
-actual_next = close[cut:]
-
-results = {}
-
-for name, fn in [
-    ('LSTM', lambda: main.predict_lstm(history_before, 7)),
-    ('ARIMA', lambda: main.predict_arima(7)),
-]:
+if __name__ == '__main__':
     try:
-        pred = np.asarray(fn(), dtype=float)
-        results[name] = metrics(actual_next, pred)
-        print(name, 'pred=', np.round(pred, 2))
-        print(name, 'actual=', np.round(actual_next, 2))
-        print(name, results[name])
+        evaluate_model('LSTM', lambda history, days: main.predict_lstm(history, days))
     except Exception as exc:
-        print(name, 'ERROR', exc)
+        print('LSTM ERROR', exc)
 
-# LSTM_ARIMA uses LSTM_ARIMA if available else fallback blend.
-try:
-    pred = np.asarray(main.predict_lstm_arima(history_before, 7), dtype=float)
-    results['LSTM_ARIMA'] = metrics(actual_next, pred)
-    print('LSTM_ARIMA', np.round(pred, 2))
-    print('LSTM_ARIMA', results['LSTM_ARIMA'])
-except Exception as exc:
-    print('LSTM_ARIMA ERROR', exc)
+    try:
+        evaluate_model('ARIMA', lambda history, days: main.predict_arima(days, history))
+    except Exception as exc:
+        print('ARIMA ERROR', exc)
 
-print('DONE')
+    try:
+        evaluate_model('LSTM_ARIMA', lambda history, days: main.predict_lstm_arima(history, days))
+    except Exception as exc:
+        print('LSTM_ARIMA ERROR', exc)
+
+    print('DONE')

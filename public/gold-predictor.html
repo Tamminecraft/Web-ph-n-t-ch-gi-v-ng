@@ -143,6 +143,69 @@
         <p class="text-xs text-gray-400 mt-1">Dự báo ngắn hạn</p>
       </div>
     </section>
+    <section class="bg-white rounded-2xl card-shadow p-6 border border-gray-100">
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h2 class="text-lg font-semibold flex items-center gap-2">
+          <span class="w-1.5 h-6 bg-gold rounded-full"></span>
+          Đánh giá nhanh
+        </h2>
+        <span class="text-xs text-gray-500">So sánh với baseline naive forecast</span>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+        <div class="rounded-xl bg-gray-50 p-4">
+          <p class="text-gray-500">MAE</p>
+          <p id="maeValue" class="mt-1 text-xl font-semibold text-gray-900">--</p>
+        </div>
+        <div class="rounded-xl bg-gray-50 p-4">
+          <p class="text-gray-500">RMSE</p>
+          <p id="rmseValue" class="mt-1 text-xl font-semibold text-gray-900">--</p>
+        </div>
+        <div class="rounded-xl bg-gray-50 p-4">
+          <p class="text-gray-500">MAPE</p>
+          <p id="mapeValue" class="mt-1 text-xl font-semibold text-gray-900">--</p>
+        </div>
+        <div class="rounded-xl bg-gray-50 p-4">
+          <p class="text-gray-500">Direction Acc.</p>
+          <p id="directionValue" class="mt-1 text-xl font-semibold text-gray-900">--</p>
+        </div>
+      </div>
+      <div class="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+        <div class="rounded-xl bg-amber-50 p-4">
+          <p class="text-gray-500">Trend</p>
+          <p id="signalTrend" class="mt-1 text-xl font-semibold text-gray-900">--</p>
+        </div>
+        <div class="rounded-xl bg-amber-50 p-4">
+          <p class="text-gray-500">Momentum</p>
+          <p id="signalMomentum" class="mt-1 text-xl font-semibold text-gray-900">--</p>
+        </div>
+        <div class="rounded-xl bg-amber-50 p-4">
+          <p class="text-gray-500">Volatility</p>
+          <p id="signalVolatility" class="mt-1 text-xl font-semibold text-gray-900">--</p>
+        </div>
+      </div>
+      <div class="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-gray-700">
+        <p class="font-semibold text-gray-900 mb-1">Khoảng tin cậy</p>
+        <p id="confidenceText" class="leading-6">--</p>
+      </div>
+      <div class="mt-4 rounded-xl border border-gold/30 bg-white p-4 text-sm text-gray-700">
+        <p class="font-semibold text-gray-900 mb-1">Gợi ý phân tích</p>
+        <p id="recommendationText" class="leading-6">--</p>
+      </div>
+      <div class="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="font-semibold text-gray-900">Mức độ tin cậy</p>
+          <span id="confidenceBadge" class="rounded-full bg-gold/20 px-3 py-1 text-xs font-semibold text-gray-700">--</span>
+        </div>
+        <p id="confidenceSummary" class="mt-2 leading-6">--</p>
+      </div>
+      <div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-gray-700">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="font-semibold text-gray-900">Đề xuất chiến lược</p>
+          <span id="signalBadge" class="rounded-full px-3 py-1 text-xs font-semibold text-white bg-gray-600">--</span>
+        </div>
+        <p id="strategyText" class="leading-6 mt-2">--</p>
+      </div>
+    </section>
     <footer class="text-center text-xs text-gray-400 py-6">
       © 2026 Gold Predictor · Powered by LSTM &amp; ARIMA
     </footer>
@@ -269,6 +332,41 @@
     chart.update();
     document.getElementById('currentPrice').textContent = '$' + Number(data.current_price).toLocaleString();
     document.getElementById('maxPrice').textContent     = '$' + Number(data.max_price).toLocaleString();
+    const metrics = data.baseline?.metrics || {};
+    document.getElementById('maeValue').textContent = metrics.mae != null ? metrics.mae : '--';
+    document.getElementById('rmseValue').textContent = metrics.rmse != null ? metrics.rmse : '--';
+    document.getElementById('mapeValue').textContent = metrics.mape != null ? metrics.mape : '--';
+    document.getElementById('directionValue').textContent = metrics.direction_accuracy != null ? metrics.direction_accuracy : '--';
+    const signal = data.signal || {};
+    document.getElementById('signalTrend').textContent = signal.trend ? signal.trend.toUpperCase() : '--';
+    document.getElementById('signalMomentum').textContent = signal.momentum != null ? signal.momentum : '--';
+    document.getElementById('signalVolatility').textContent = signal.volatility != null ? signal.volatility : '--';
+    const confidence = data.confidence_interval || {};
+    const lower = confidence.lower || [];
+    const upper = confidence.upper || [];
+    document.getElementById('confidenceText').textContent = lower.length && upper.length
+      ? `Dự báo có thể dao động từ $${lower[lower.length - 1].toLocaleString()} đến $${upper[upper.length - 1].toLocaleString()} trong kỳ hạn đã chọn.`
+      : '--';
+    document.getElementById('recommendationText').textContent = data.recommendation || '--';
+    document.getElementById('strategyText').textContent = data.strategy_recommendation || '--';
+    const signalLabel = data.signal_label || {};
+    const signalBadgeEl = document.getElementById('signalBadge');
+    const label = signalLabel.label || '--';
+    signalBadgeEl.textContent = label;
+    if (signalLabel.class_name === 'buy') {
+      signalBadgeEl.className = 'rounded-full px-3 py-1 text-xs font-semibold text-white bg-green-600';
+    } else if (signalLabel.class_name === 'sell') {
+      signalBadgeEl.className = 'rounded-full px-3 py-1 text-xs font-semibold text-white bg-red-600';
+    } else {
+      signalBadgeEl.className = 'rounded-full px-3 py-1 text-xs font-semibold text-white bg-amber-600';
+    }
+    const confidenceLabel = data.confidence_label || {};
+    const badgeEl = document.getElementById('confidenceBadge');
+    const summaryEl = document.getElementById('confidenceSummary');
+    const level = confidenceLabel.level || '--';
+    const score = confidenceLabel.score != null ? confidenceLabel.score : '--';
+    badgeEl.textContent = `${level.toUpperCase()} (${score})`;
+    summaryEl.textContent = `Mức độ tin cậy hiện tại là ${level}. Điểm chấm: ${score} trên 1.`;
     const trendEl = document.getElementById('trend');
     if (data.trend === 'up') {
       trendEl.textContent = '▲ Tăng';

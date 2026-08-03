@@ -16,6 +16,12 @@ export interface PredictionResult {
   rmse: number;
   mape: number;
   series: PredictionPoint[];
+  // Optional enriched fields from the backend
+  recommendation?: string;
+  strategy_recommendation?: string;
+  signal_label?: { label: string; class_name: string };
+  confidence_label?: { level: string; score: number };
+  confidence_interval?: { lower: number[]; upper: number[] };
 }
 
 export interface HistoryEntry extends PredictionResult {
@@ -139,10 +145,61 @@ export async function fetchPrediction(model: ModelType, days: number): Promise<P
     });
     if (!res.ok) throw new Error("bad status");
     const data = await res.json();
-    // Best-effort mapping; fall back to mock shape if fields absent
-    if (data && Array.isArray(data.series)) {
+    // If backend returns the compact shape used by this app, return it directly
+    if (data && Array.isArray((data as any).series)) {
       return { ...data, model, days, createdAt: Date.now() } as PredictionResult;
     }
+
+    // If backend returns the new enriched shape (history + forecast), map it to our PredictionResult
+    if (data && data.history && data.forecast) {
+      const historyLabels: string[] = data.history.labels || [];
+      const historyValues: number[] = data.history.values || [];
+      const forecastLabels: string[] = data.forecast.labels || [];
+      const forecastValues: number[] = data.forecast.values || [];
+
+      const series: PredictionPoint[] = [];
+      for (let i = 0; i < historyLabels.length; i++) {
+        series.push({ date: String(historyLabels[i]), actual: Number(historyValues[i]) });
+      }
+      // mark current price as last actual if present
+      const currentPrice = Number(data.current_price ?? (historyValues.length ? historyValues[historyValues.length - 1] : NaN));
+      if (!Number.isNaN(currentPrice)) {
+        // ensure there's a final history row representing "today" and include a predicted value
+        // so the predicted line connects smoothly from current price to the +1 forecast point
+        const last = series[series.length - 1];
+        if (!last || last.actual !== currentPrice) {
+          series.push({ date: "Hôm nay", actual: currentPrice, predicted: currentPrice });
+        } else if (last && last.actual === currentPrice && last.predicted == null) {
+          // if last exists but lacks predicted, add predicted to connect lines
+          last.predicted = currentPrice;
+        }
+      }
+      for (let i = 0; i < forecastLabels.length; i++) {
+        series.push({ date: String(forecastLabels[i]), predicted: Number(forecastValues[i]) });
+      }
+
+      const baselineMetrics = (data.baseline && data.baseline.metrics) || {};
+      const rmse = Number(baselineMetrics.rmse ?? baselineMetrics.RMSE ?? 0);
+      const mape = Number(baselineMetrics.mape ?? baselineMetrics.MAPE ?? 0);
+
+      return {
+        model,
+        days,
+        createdAt: Date.now(),
+        currentPrice: Number(data.current_price ?? currentPrice ?? 0),
+        maxPredicted: Number(data.max_price ?? 0),
+        trend: data.trend === "up" ? "up" : "down",
+        rmse: rmse || 0,
+        mape: mape || 0,
+        series,
+        recommendation: data.recommendation,
+        strategy_recommendation: data.strategy_recommendation,
+        signal_label: data.signal_label,
+        confidence_label: data.confidence_label,
+        confidence_interval: data.confidence_interval,
+      } as PredictionResult;
+    }
+
     throw new Error("unknown shape");
   } catch {
     return mockPredict(model, days);

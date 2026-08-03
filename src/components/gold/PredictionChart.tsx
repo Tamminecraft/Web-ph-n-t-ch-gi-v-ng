@@ -44,18 +44,22 @@ export function PredictionChart({ data }: { data: PredictionPoint[] }) {
             type="monotone"
             dataKey="actual"
             stroke="oklch(0.2 0.02 60)"
-            strokeWidth={2.5}
+            strokeWidth={3}
             dot={{ r: 4, fill: "oklch(0.2 0.02 60)" }}
-            connectNulls={false}
+            activeDot={{ r: 6 }}
+            connectNulls={true}
+            strokeOpacity={0.9}
           />
           <Line
             type="monotone"
             dataKey="predicted"
             stroke="oklch(0.66 0.13 78)"
-            strokeWidth={2.5}
+            strokeWidth={3}
             strokeDasharray="6 5"
             dot={{ r: 4, fill: "oklch(0.66 0.13 78)" }}
-            connectNulls={false}
+            activeDot={{ r: 6 }}
+            connectNulls={true}
+            strokeOpacity={0.95}
           />
         </ComposedChart>
       </ResponsiveContainer>

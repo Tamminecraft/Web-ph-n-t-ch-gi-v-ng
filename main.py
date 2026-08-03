@@ -10,6 +10,20 @@ import pickle
 import os
 import traceback
 
+from model_utils import (
+    build_confidence_interval,
+    build_confidence_label,
+    build_ensemble_forecast,
+    build_feature_engineered_forecast,
+    build_naive_forecast,
+    build_recommendation,
+    build_signal_label,
+    build_strategy_recommendation,
+    compute_metrics,
+    summarize_price_signal,
+    validate_days_to_predict,
+)
+
 app = FastAPI(title="AI Gold Predictor API")
 
 app.add_middleware(
@@ -220,11 +234,18 @@ class PredictRequest(BaseModel):
 
 # --- 2. HÀM DỰ ĐOÁN LSTM (XỬ LÝ LỆCH SCALER 1 CỘT & LSTM 9 CỘT) ---
 # --- 2. HÀM DỰ ĐOÁN LSTM (FIX LỖI RỚT GIÁ ĐỘT NGỘT) ---
+def predict_feature_engineered(close_prices, days):
+    return build_feature_engineered_forecast(np.asarray(close_prices, dtype=float).tolist(), days)
+
+
 def predict_lstm(close_prices, days, model=None, model_scaler=None):
     if model is None:
         model = lstm_model
     if model_scaler is None:
         model_scaler = scaler
+
+    if model is None or model_scaler is None:
+        return predict_feature_engineered(close_prices, days)
 
     try:
         input_shape = model.input_shape
@@ -237,13 +258,18 @@ def predict_lstm(close_prices, days, model=None, model_scaler=None):
         seq_len = 60
         num_features = 1
 
-    # 1. Lấy dữ liệu và CHUẨN HÓA 1 CỘT (Vì Scaler chỉ nhận đúng 1 cột)
-    recent_prices = close_prices[-seq_len:].reshape(-1, 1)
+    history_values = np.asarray(close_prices, dtype=float).reshape(-1)
+    if history_values.size == 0:
+        raise ValueError("close_prices không được rỗng")
+
+    if seq_len > history_values.size:
+        history_values = np.pad(history_values, (seq_len - history_values.size, 0), mode="edge")
+
+    recent_prices = history_values[-seq_len:].reshape(-1, 1)
     recent_scaled = model_scaler.transform(recent_prices)
     
     # 2. BƠM CHÍNH GIÁ TRỊ CLOSE VÀO CÁC CỘT CÒN LẠI (Thay vì số 0)
     if num_features > 1:
-        # Nhân bản cột Close đã chuẩn hóa ra thành các cột phụ
         dummy_features = np.tile(recent_scaled, (1, num_features - 1))
         curr_input_2d = np.hstack((recent_scaled, dummy_features))
     else:
@@ -257,23 +283,24 @@ def predict_lstm(close_prices, days, model=None, model_scaler=None):
         pred_raw = model.predict(curr_input, verbose=0)
         pred_val = float(pred_raw.flatten()[0])
         predictions_scaled.append(pred_val)
-        
-        # Cập nhật cửa sổ trượt: Đưa pred_val vào CẢ 9 CỘT của ngày mới
         next_step = np.full((1, 1, num_features), pred_val, dtype=np.float32)
         curr_input = np.append(curr_input[:, 1:, :], next_step, axis=1)
 
-    # 4. Giải chuẩn hóa (Đưa lại về 1 cột cho Scaler dịch ngược ra giá tiền)
     preds_array = np.array(predictions_scaled).reshape(-1, 1)
     unscaled = model_scaler.inverse_transform(preds_array)
-    
-    return unscaled.flatten()
+    ml_preds = unscaled.flatten()
+
+    feature_preds = predict_feature_engineered(close_prices, days)
+    return build_ensemble_forecast(np.asarray(close_prices, dtype=float).tolist(), days, secondary_forecast=ml_preds, blend=0.3)
 
 def predict_lstm_arima(close_prices, days):
     if lstm_arima_model is None:
-        raise RuntimeError("LSTM_ARIMA model chưa được nạp")
+        lstm_preds = predict_lstm(close_prices, days)
+        arima_preds = predict_arima(days, close_prices)
+        return np.asarray(lstm_preds, dtype=float) * 0.5 + np.asarray(arima_preds, dtype=float) * 0.5
     return predict_lstm(close_prices, days, model=lstm_arima_model, model_scaler=lstm_arima_scaler)
 
-def predict_arima(days):
+def predict_arima(days, close_prices=None):
     if arima_model is None:
         raise RuntimeError("ARIMA model chưa được nạp")
 
@@ -298,20 +325,33 @@ def predict_arima(days):
         except Exception as exc:
             print(f"⚠️ Không thể invert ARIMA scaler: {exc}")
 
-    return forecast_values
+    forecast_values = np.asarray(forecast_values, dtype=float).reshape(-1)
+    if forecast_values.size < days:
+        forecast_values = np.resize(forecast_values, days)
+    elif forecast_values.size > days:
+        forecast_values = forecast_values[:days]
+
+    if close_prices is None:
+        feature_history = np.asarray([0] * 10, dtype=float)
+    else:
+        feature_history = np.asarray(close_prices, dtype=float).reshape(-1)
+
+    feature_preds = build_feature_engineered_forecast(feature_history.tolist(), days)
+    return np.asarray(forecast_values, dtype=float) * 0.7 + np.asarray(feature_preds, dtype=float) * 0.3
 
 # --- 3. ENDPOINT XỬ LÝ CHÍNH ---
 @app.post("/predict")
 async def predict_gold_price(request: PredictRequest):
     try:
-        print(f"\n[REQUEST] Nhận yêu cầu: {request.model_type} cho {request.days_to_predict} ngày")
+        days = validate_days_to_predict(request.days_to_predict)
+        print(f"\n[REQUEST] Nhận yêu cầu: {request.model_type} cho {days} ngày")
         
         gold = yf.Ticker("GC=F")
         hist = gold.history(period="6mo")
         
         if hist.empty or len(hist) < 60:
             raise ValueError("Không đủ dữ liệu giá vàng từ Yahoo Finance")
-            
+
         recent_data = hist.tail(7)
         history_labels = [date.strftime("%d-%m") for date in recent_data.index]
         history_values = [round(float(val), 2) for val in recent_data['Close'].tolist()]
@@ -322,27 +362,36 @@ async def predict_gold_price(request: PredictRequest):
         forecast_values = []
         
         if request.model_type == "LSTM":
-            raw_preds = predict_lstm(close_prices, request.days_to_predict)
+            raw_preds = predict_lstm(close_prices, days)
             forecast_values = [round(float(x), 2) for x in raw_preds]
 
         elif request.model_type == "ARIMA":
-            raw_preds = predict_arima(request.days_to_predict)
+            raw_preds = predict_arima(days)
             forecast_values = [round(float(x), 2) for x in raw_preds]
 
         elif request.model_type == "LSTM_ARIMA":
             if lstm_arima_model is not None:
-                raw_preds = predict_lstm_arima(close_prices, request.days_to_predict)
+                raw_preds = predict_lstm_arima(close_prices, days)
                 forecast_values = [round(float(x), 2) for x in raw_preds]
             else:
-                lstm_preds = predict_lstm(close_prices, request.days_to_predict)
-                arima_preds = predict_arima(request.days_to_predict)
-                # Kết hợp kết quả
+                lstm_preds = predict_lstm(close_prices, days)
+                arima_preds = predict_arima(days)
                 forecast_values = [
                     round(float(0.5 * l + 0.5 * a), 2)
                     for l, a in zip(lstm_preds, arima_preds)
                 ]
+        else:
+            raise ValueError("model_type không hợp lệ")
 
-        forecast_labels = [f"+{i+1}" for i in range(request.days_to_predict)]
+        naive_forecast = build_naive_forecast(close_prices.tolist(), days)
+        baseline_metrics = compute_metrics(close_prices[-days:], naive_forecast)
+        signal_summary = summarize_price_signal(hist['Close'].tail(10).tolist())
+        confidence_interval = build_confidence_interval([float(x) for x in close_prices[-10:]], scale=0.01)
+        recommendation = build_recommendation(signal_summary, hist['Close'].tail(10).tolist(), current_price)
+        strategy_recommendation = build_strategy_recommendation(signal_summary, current_price)
+        signal_label = build_signal_label(signal_summary)
+        confidence_label = build_confidence_label(baseline_metrics)
+        forecast_labels = [f"+{i+1}" for i in range(days)]
         max_predicted_price = round(float(max(forecast_values)), 2)
 
         print("[SUCCESS] Tính toán AI thành công!")
@@ -359,10 +408,26 @@ async def predict_gold_price(request: PredictRequest):
             "current_price": current_price,
             "max_price": max_predicted_price,
             "trend": "up" if forecast_values[-1] > current_price else "down",
-            "selected_model": request.model_type
+            "selected_model": request.model_type,
+            "baseline": {
+                "forecast": [round(float(x), 2) for x in naive_forecast],
+                "metrics": baseline_metrics,
+            },
+            "signal": signal_summary,
+            "confidence_interval": confidence_interval,
+            "recommendation": recommendation,
+            "strategy_recommendation": strategy_recommendation,
+            "signal_label": signal_label,
+            "confidence_label": confidence_label,
         }
 
     except Exception as e:
         print("\n❌ LỖI CHI TIẾT TRONG QUÁ TRÌNH XỬ LÝ API:")
         traceback.print_exc()
         raise e
+
+
+if __name__ == "__main__":
+    import uvicorn
+    print("\n🚀 Khởi động FastAPI server...")
+    uvicorn.run(app, host="127.0.0.1", port=8000)

@@ -79,7 +79,7 @@ function Index() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background bg-page-gradient">
       <Header
         user={user}
         onLogin={() => setAuthOpen(true)}
@@ -214,7 +214,7 @@ function ControlPanel({
   onSubmit: () => void;
 }) {
   return (
-    <section className="bg-card rounded-2xl shadow-card p-6 border border-border">
+    <section className="bg-white/88 backdrop-blur-xl rounded-[2rem] border border-white/70 shadow-card p-6 transition-transform duration-300 ease-out hover:-translate-y-1 animate-fade-in-up">
       <SectionTitle>Bảng điều khiển</SectionTitle>
       <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-4 items-end">
         <div className="space-y-2">
@@ -245,7 +245,7 @@ function ControlPanel({
         <Button
           onClick={onSubmit}
           disabled={loading}
-          className="h-11 px-8 bg-gradient-gold text-foreground shadow-gold hover:opacity-90 font-semibold"
+          className="h-11 px-8 bg-gradient-to-r from-[#f8b64c] to-[#d1921d] text-foreground shadow-gold hover:-translate-y-0.5 transform transition-all duration-200 font-semibold"
         >
           {loading ? (
             <>
@@ -262,7 +262,7 @@ function ControlPanel({
 
 function ChartCard({ result }: { result: PredictionResult }) {
   return (
-    <section className="bg-card rounded-2xl shadow-card p-6 border border-border">
+    <section className="bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-card border border-white/60 p-6 transition-transform duration-300 ease-out hover:-translate-y-1 animate-fade-in-up">
       <SectionTitle>Biểu đồ dự đoán giá vàng — {modelLabel[result.model]}</SectionTitle>
       <PredictionChart data={result.series} />
     </section>
@@ -284,7 +284,7 @@ function MetricCard({
     tone === "gold" ? "text-gold-dark" :
     "text-foreground";
   return (
-    <div className="bg-card rounded-2xl shadow-card p-5 border border-border">
+    <div className="bg-white/90 backdrop-blur-xl rounded-[1.75rem] shadow-card p-5 border border-white/70 transition-transform duration-300 hover:-translate-y-1">
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>{label}</span>
         {icon}
@@ -349,29 +349,54 @@ function AIInsights({ result }: { result: PredictionResult }) {
       ? `Mô hình ${modelLabel[result.model]} dự báo xu hướng ${trendText} khoảng ${Math.abs(changePct).toFixed(2)}% trong ${result.days} ngày tới với MAPE ${result.mape.toFixed(2)}%. Có thể cân nhắc nắm giữ / mua tích lũy ngắn hạn.`
       : `Mô hình ${modelLabel[result.model]} dự báo xu hướng ${trendText} khoảng ${Math.abs(changePct).toFixed(2)}% trong ${result.days} ngày tới với MAPE ${result.mape.toFixed(2)}%. Nhà đầu tư nên thận trọng, cân nhắc chốt lời hoặc chờ mua vào giá tốt hơn.`;
 
+  // Prefer backend-provided recommendation/strategy if available
+  const backendRecommendation = (result as any).recommendation || recommendation;
+  const backendStrategy = (result as any).strategy_recommendation || ("Chiến lược đề xuất: " + recommendation);
+  const signalLabel = (result as any).signal_label as { label?: string; class_name?: string } | undefined;
+  const confidence = (result as any).confidence_label as { level?: string; score?: number } | undefined;
+
   return (
-    <section className="rounded-2xl border border-gold-light/60 bg-gradient-to-br from-accent/60 via-card to-card p-6 shadow-card">
-      <div className="flex items-start gap-4">
-        <div className="w-12 h-12 rounded-xl bg-gradient-gold flex items-center justify-center shadow-gold shrink-0">
-          <Sparkles className="w-6 h-6 text-foreground" />
+    <section className="bg-gradient-to-br from-white/90 via-[#fff9f1]/80 to-[#fff0e6]/80 rounded-[2rem] border border-white/70 shadow-card p-6 animate-fade-in-up">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <div className="w-14 h-14 rounded-3xl bg-gradient-to-br from-gold to-[#c59f37] flex items-center justify-center shadow-gold shrink-0">
+          <Sparkles className="w-6 h-6 text-white" />
         </div>
         <div className="flex-1 min-w-0">
-          <h2 className="text-lg font-semibold">Đề xuất từ mô hình phân tích tích hợp AI</h2>
-          <p className="text-sm text-muted-foreground">Phân tích dựa trên kết quả mô hình hiện tại.</p>
+          <h2 className="text-lg sm:text-xl font-semibold">Đề xuất từ mô hình phân tích tích hợp AI</h2>
+          <p className="text-sm text-muted-foreground mt-1">Phân tích dựa trên kết quả mô hình hiện tại.</p>
 
-          <div className="grid sm:grid-cols-2 gap-4 mt-4">
-            <div className="rounded-xl bg-card border border-border p-4">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">Độ tin cậy mô hình</div>
-              <div className={`mt-1 text-xl font-bold ${reliability.tone}`}>{reliability.label}</div>
-              <p className="text-sm text-muted-foreground mt-1">{reliability.desc} (MAPE {result.mape.toFixed(2)}%)</p>
+          <div className="grid sm:grid-cols-2 gap-4 mt-6">
+            <div className="rounded-[1.75rem] bg-white/85 border border-white/70 p-5 shadow-card transition-all duration-300 hover:-translate-y-0.5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Độ tin cậy</div>
+                  <div className={`mt-2 text-lg font-semibold ${reliability.tone}`}>{reliability.label}</div>
+                </div>
+                {confidence && (
+                  <div className="rounded-full bg-slate-950/5 px-3 py-1 text-xs font-semibold text-slate-700">
+                    {(confidence.level || "--").toString()} · {confidence.score ?? "--"}
+                  </div>
+                )}
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground">{reliability.desc} (MAPE {result.mape.toFixed(2)}%)</p>
             </div>
-            <div className="rounded-xl bg-card border border-border p-4">
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">Khuyến nghị chiến lược</div>
-              <p className="mt-1 text-sm leading-relaxed">{recommendation}</p>
+            <div className="rounded-[1.75rem] bg-white/85 border border-white/70 p-5 shadow-card transition-all duration-300 hover:-translate-y-0.5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Chiến lược đề xuất</div>
+                  <div className="mt-2 text-lg font-semibold text-slate-900">{signalLabel?.label || "Hold"}</div>
+                </div>
+                {signalLabel && (
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold text-white ${signalLabel.class_name === 'buy' ? 'bg-emerald-600' : signalLabel.class_name === 'sell' ? 'bg-rose-600' : 'bg-amber-500'}`}>
+                    {signalLabel.label}
+                  </span>
+                )}
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground">{backendStrategy}</p>
             </div>
           </div>
 
-          <div className="mt-4 flex items-start gap-2 text-xs text-muted-foreground border-t border-border pt-3">
+          <div className="mt-6 flex items-start gap-2 text-xs text-muted-foreground border-t border-white/60 pt-4">
             <AlertTriangle className="w-4 h-4 text-gold-dark shrink-0 mt-0.5" />
             <span>
               <b>Lưu ý:</b> Dự báo từ các mô hình phân tích chỉ mang tính chất tham khảo, không phải lời khuyên đầu tư tài chính mang tính chính xác 100%.
@@ -385,13 +410,13 @@ function AIInsights({ result }: { result: PredictionResult }) {
 
 function EmptyState() {
   return (
-    <div className="bg-card rounded-2xl shadow-card p-16 border border-border border-dashed text-center">
-      <div className="mx-auto w-14 h-14 rounded-2xl bg-gradient-gold flex items-center justify-center shadow-gold mb-4">
-        <Sparkles className="w-7 h-7 text-foreground" />
+    <div className="bg-white/80 backdrop-blur-xl rounded-[2rem] border border-dashed border-white/60 shadow-card p-16 text-center animate-fade-in-up">
+      <div className="mx-auto w-16 h-16 rounded-3xl bg-gradient-to-br from-gold to-[#c59f37] flex items-center justify-center shadow-gold mb-5">
+        <Sparkles className="w-8 h-8 text-white" />
       </div>
-      <h3 className="text-lg font-semibold">Sẵn sàng phân tích giá vàng</h3>
-      <p className="text-sm text-muted-foreground mt-1">
-        Chọn mô hình, nhập số ngày và nhấn <b>Phân tích ngay</b> để bắt đầu.
+      <h3 className="text-xl font-semibold text-slate-900">Sẵn sàng phân tích giá vàng</h3>
+      <p className="text-sm text-muted-foreground mt-3 max-w-md mx-auto">
+        Chọn mô hình, nhập số ngày và nhấn <b>Phân tích ngay</b> để bắt đầu phân tích với AI.
       </p>
     </div>
   );
