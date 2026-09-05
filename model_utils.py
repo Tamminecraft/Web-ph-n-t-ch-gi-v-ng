@@ -53,13 +53,17 @@ def build_feature_engineered_forecast(series: Sequence[float], days: int) -> np.
         trend_signal = (last - start) / max(abs(start), 1e-8)
 
     volatility = float(np.std(np.diff(recent))) if len(recent) > 2 else max(abs(momentum), 1e-6)
-    drift = (trend_signal * max(abs(last), 1.0) * 0.2) + (momentum * 0.35)
-    drift = float(np.clip(drift, -abs(last) * 0.15, abs(last) * 0.15))
+    drift = (trend_signal * max(abs(last), 1.0) * 0.08) + (momentum * 0.15)
+    drift = float(np.clip(drift, -abs(last) * 0.08, abs(last) * 0.08))
     if abs(volatility) < 1e-8:
         drift *= 0.6
 
     damping = np.linspace(1.0, 0.75, horizon)
     forecast = last + drift * damping
+
+    max_change_pct = min(0.03 + 0.003 * max(horizon - 1, 0), 0.05)
+    max_change = abs(last) * max_change_pct
+    forecast = np.clip(forecast, last - max_change, last + max_change)
     return np.maximum(forecast, 0.0, dtype=float)
 
 
@@ -74,7 +78,12 @@ def build_ensemble_forecast(series: Sequence[float], days: int, secondary_foreca
         raise ValueError("secondary_forecast phải có cùng số lượng điểm như days")
 
     blend = float(np.clip(blend, 0.0, 1.0))
-    return (1.0 - blend) * primary + blend * secondary
+    blended = (1.0 - blend) * primary + blend * secondary
+
+    base_price = float(np.asarray(series, dtype=float).reshape(-1)[-1]) if len(np.asarray(series, dtype=float).reshape(-1)) > 0 else float(primary[-1])
+    max_change_pct = min(0.03 + 0.003 * max(int(days) - 1, 0), 0.05)
+    max_change = abs(base_price) * max_change_pct
+    return np.clip(blended, base_price - max_change, base_price + max_change)
 
 
 def compute_metrics(y_true: Sequence[float], y_pred: Sequence[float]) -> dict[str, float]:

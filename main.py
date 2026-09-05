@@ -47,12 +47,12 @@ def resolve_model_url(env_name: str, default: str | None = None):
     return default
 
 # Default: use the file ids you provided as direct-download Drive links
-DEFAULT_LSTM_ID = "1ES_c67PW5Gn68ZPvTGVOcbkNURF8ony7"
-DEFAULT_SCALER_ID = "1t3QvzAkP26zxK52LHUACf_F0PkeaGnkG"
+DEFAULT_LSTM_ID = "1-S8hOrIDd7d0CZj2aClA-vm8SbMJcc1k"
+DEFAULT_SCALER_ID = "1NnIzMCQNZeUY1g5PD6p4tgIDoIBvjhMH"
 DEFAULT_ARIMA_ID = "14Qxre6r9fn7zxgZGIK-VM7mNIzSTlrfn"
-DEFAULT_ARIMA_SCALER_ID = "1ouKRCESFQhdbIBhTLVoEd7hOAcdow9Ns"
-DEFAULT_LSTM_ARIMA_ID = "17GWnLB35mXALkwt7xphwAG7Oe_gRF0Tx"
-DEFAULT_LSTM_ARIMA_SCALER_ID = "1ydpjbHvDgO_tc2WkUyb91tZeZ3GUqX9s"
+DEFAULT_ARIMA_SCALER_ID = "1M9Cz4OI26zvH-xd_hlRVYoXAO4Ne6smo"
+DEFAULT_LSTM_ARIMA_ID = "1xXEtwbZ9MNmtZshXlrnCNWZY1Ieh2mtf"
+DEFAULT_LSTM_ARIMA_SCALER_ID = "1EwBE6a3I3SA0G9XxpRmANNBrOlg1Dk_z"
 DEFAULT_LSTM_URL = f"https://drive.google.com/uc?export=download&id={DEFAULT_LSTM_ID}"
 DEFAULT_SCALER_URL = f"https://drive.google.com/uc?export=download&id={DEFAULT_SCALER_ID}"
 DEFAULT_ARIMA_URL = f"https://drive.google.com/uc?export=download&id={DEFAULT_ARIMA_ID}"

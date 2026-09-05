@@ -68,6 +68,13 @@ class TestModelUtils(unittest.TestCase):
         self.assertTrue(np.allclose(build_ensemble_forecast(series, 3, secondary_forecast=secondary, blend=0.0), technical))
         self.assertTrue(np.allclose(build_ensemble_forecast(series, 3, secondary_forecast=secondary, blend=1.0), secondary))
 
+    def test_build_ensemble_forecast_caps_extreme_secondary_signal(self):
+        series = np.array([1000.0, 1030.0, 1060.0, 1100.0, 1150.0, 1200.0], dtype=float)
+        secondary = np.array([1500.0, 1500.0, 1500.0, 1500.0, 1500.0], dtype=float)
+        forecast = build_ensemble_forecast(series, 5, secondary_forecast=secondary, blend=0.8)
+        self.assertLessEqual(forecast[-1], series[-1] * 1.05)
+        self.assertGreaterEqual(forecast[-1], series[-1] * 0.95)
+
     def test_run_rolling_backtest_returns_aggregated_metrics(self):
         series = np.linspace(100.0, 130.0, 20)
         result = run_rolling_backtest(series, horizon=2, window=8, forecast_fn=lambda history, days: build_feature_engineered_forecast(history, days))
