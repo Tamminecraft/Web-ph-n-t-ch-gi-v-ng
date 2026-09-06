@@ -123,12 +123,21 @@ def download_or_redownload(url: str, dest_path: str, description: str):
 
 
 print("--- Kiểm tra và tải model nếu cần ---")
-lstm_path = os.path.join(MODEL_DIR, "lstm_model.h5")
+lstm_h5_path = os.path.join(MODEL_DIR, "lstm_model.h5")
+lstm_keras_path = os.path.join(MODEL_DIR, "LSTM_Model.keras")
+lstm_path = lstm_keras_path if os.path.exists(lstm_keras_path) else lstm_h5_path
 scaler_path = os.path.join(MODEL_DIR, "scaler_final.pkl")
+lstm_scaler_x_path = os.path.join(MODEL_DIR, "lstm_scaler_x.pkl")
 arima_path = os.path.join(MODEL_DIR, "arima_model.pkl")
+if not os.path.exists(arima_path):
+    arima_path = os.path.join(MODEL_DIR, "gold_arima_model.pkl")
 arima_scaler_path = os.path.join(MODEL_DIR, "arima_scaler.pkl")
 lstm_arima_path = os.path.join(MODEL_DIR, "lstm_arima_model.h5")
+if not os.path.exists(lstm_arima_path):
+    lstm_arima_path = os.path.join(MODEL_DIR, "hybrid_lstm_model.h5")
 lstm_arima_scaler_path = os.path.join(MODEL_DIR, "lstm_arima_scaler.pkl")
+if not os.path.exists(lstm_arima_scaler_path):
+    lstm_arima_scaler_path = os.path.join(MODEL_DIR, "scaler_res.pkl")
 
 if not os.path.exists(lstm_path) and LSTM_MODEL_URL:
     print(f"Đang tải LSTM từ: {LSTM_MODEL_URL}")
@@ -157,6 +166,7 @@ if not os.path.exists(lstm_arima_scaler_path) and LSTM_ARIMA_SCALER_URL:
 # Try loading models; missing optional models will be set to None
 lstm_model = None
 scaler = None
+lstm_scaler_x = None
 arima_model = None
 arima_scaler = None
 lstm_arima_model = None
@@ -172,6 +182,11 @@ try:
         print(">>> Nạp Scaler thành công từ:", scaler_path)
     else:
         print("⚠️ Không tìm thấy file Scaler ở", scaler_path)
+    if os.path.exists(lstm_scaler_x_path):
+        lstm_scaler_x = joblib.load(lstm_scaler_x_path)
+        print(">>> Nạp LSTM input scaler thành công từ:", lstm_scaler_x_path)
+    else:
+        print("⚠️ Chưa có LSTM input scaler ở", lstm_scaler_x_path)
     if os.path.exists(arima_path):
         with open(arima_path, "rb") as f:
             arima_model = pickle.load(f)
@@ -245,7 +260,7 @@ def predict_lstm(close_prices, days, model=None, model_scaler=None):
         model_scaler = scaler
 
     if model is None or model_scaler is None:
-        return predict_feature_engineered(close_prices, days)
+        raise RuntimeError("LSTM model hoặc output scaler chưa được nạp")
 
     try:
         input_shape = model.input_shape
@@ -265,15 +280,21 @@ def predict_lstm(close_prices, days, model=None, model_scaler=None):
     if seq_len > history_values.size:
         history_values = np.pad(history_values, (seq_len - history_values.size, 0), mode="edge")
 
-    recent_prices = history_values[-seq_len:].reshape(-1, 1)
-    recent_scaled = model_scaler.transform(recent_prices)
-    
-    # 2. BƠM CHÍNH GIÁ TRỊ CLOSE VÀO CÁC CỘT CÒN LẠI (Thay vì số 0)
-    if num_features > 1:
-        dummy_features = np.tile(recent_scaled, (1, num_features - 1))
-        curr_input_2d = np.hstack((recent_scaled, dummy_features))
+    if num_features == 5:
+        if lstm_scaler_x is None or not hasattr(lstm_scaler_x, "transform"):
+            raise RuntimeError("LSTM cần models/lstm_scaler_x.pkl để chuẩn hóa Open/High/Low/Close/Volume")
+        gold = yf.Ticker("GC=F")
+        feature_history = gold.history(period="6mo", interval="1d", auto_adjust=False)
+        feature_history = feature_history.dropna(subset=["Open", "High", "Low", "Close", "Volume"])
+        if len(feature_history) < seq_len:
+            raise ValueError("Không đủ dữ liệu OHLCV cho LSTM")
+        features = feature_history[["Open", "High", "Low", "Close", "Volume"]].tail(seq_len).to_numpy(dtype=float)
+        curr_input_2d = lstm_scaler_x.transform(features)
+    elif num_features == 1:
+        recent_prices = history_values[-seq_len:].reshape(-1, 1)
+        curr_input_2d = model_scaler.transform(recent_prices)
     else:
-        curr_input_2d = recent_scaled
+        raise RuntimeError(f"LSTM input có {num_features} feature, không khớp pipeline Colab (5 feature)")
 
     # 3. Đưa về dạng 3D cho LSTM
     curr_input = curr_input_2d.reshape(1, seq_len, num_features).astype(np.float32)
@@ -283,22 +304,41 @@ def predict_lstm(close_prices, days, model=None, model_scaler=None):
         pred_raw = model.predict(curr_input, verbose=0)
         pred_val = float(pred_raw.flatten()[0])
         predictions_scaled.append(pred_val)
-        next_step = np.full((1, 1, num_features), pred_val, dtype=np.float32)
+        if num_features == 5:
+            next_step = curr_input[:, -1:, :].copy()
+            close_idx = 3
+            next_step[0, 0, close_idx] = pred_val
+        else:
+            next_step = np.full((1, 1, num_features), pred_val, dtype=np.float32)
         curr_input = np.append(curr_input[:, 1:, :], next_step, axis=1)
 
     preds_array = np.array(predictions_scaled).reshape(-1, 1)
     unscaled = model_scaler.inverse_transform(preds_array)
     ml_preds = unscaled.flatten()
 
-    feature_preds = predict_feature_engineered(close_prices, days)
-    return build_ensemble_forecast(np.asarray(close_prices, dtype=float).tolist(), days, secondary_forecast=ml_preds, blend=0.3)
+    return ml_preds
 
 def predict_lstm_arima(close_prices, days):
-    if lstm_arima_model is None:
-        lstm_preds = predict_lstm(close_prices, days)
-        arima_preds = predict_arima(days, close_prices)
-        return np.asarray(lstm_preds, dtype=float) * 0.5 + np.asarray(arima_preds, dtype=float) * 0.5
-    return predict_lstm(close_prices, days, model=lstm_arima_model, model_scaler=lstm_arima_scaler)
+    if lstm_arima_model is None or lstm_arima_scaler is None:
+        raise RuntimeError("Hybrid LSTM_ARIMA model hoặc residual scaler chưa được nạp")
+    arima_forecast = predict_arima(days)
+    residual_values = np.asarray(arima_model.resid, dtype=float).reshape(-1, 1)[1:]
+    scaled_residuals = lstm_arima_scaler.transform(residual_values)
+    look_back = int(lstm_arima_model.input_shape[1])
+    if len(scaled_residuals) < look_back:
+        raise ValueError("Không đủ residual để chạy hybrid LSTM_ARIMA")
+    current_window = scaled_residuals[-look_back:].reshape(1, look_back, 1).astype(np.float32)
+    residual_forecast = []
+    for _ in range(days):
+        next_residual = float(lstm_arima_model.predict(current_window, verbose=0).flatten()[0])
+        residual_forecast.append(next_residual)
+        current_window = np.append(
+            current_window[:, 1:, :],
+            np.asarray(next_residual, dtype=np.float32).reshape(1, 1, 1),
+            axis=1,
+        )
+    residual_usd = lstm_arima_scaler.inverse_transform(np.asarray(residual_forecast).reshape(-1, 1)).flatten()
+    return np.asarray(arima_forecast, dtype=float) + residual_usd
 
 def predict_arima(days, close_prices=None):
     if arima_model is None:
@@ -319,25 +359,13 @@ def predict_arima(days, close_prices=None):
     if ARIMA_USE_LOG:
         forecast_values = np.exp(forecast_values)
 
-    if ARIMA_USE_SCALER and arima_scaler is not None:
-        try:
-            forecast_values = arima_scaler.inverse_transform(forecast_values.reshape(-1, 1)).flatten()
-        except Exception as exc:
-            print(f"⚠️ Không thể invert ARIMA scaler: {exc}")
-
     forecast_values = np.asarray(forecast_values, dtype=float).reshape(-1)
     if forecast_values.size < days:
         forecast_values = np.resize(forecast_values, days)
     elif forecast_values.size > days:
         forecast_values = forecast_values[:days]
 
-    if close_prices is None:
-        feature_history = np.asarray([0] * 10, dtype=float)
-    else:
-        feature_history = np.asarray(close_prices, dtype=float).reshape(-1)
-
-    feature_preds = build_feature_engineered_forecast(feature_history.tolist(), days)
-    return np.asarray(forecast_values, dtype=float) * 0.7 + np.asarray(feature_preds, dtype=float) * 0.3
+    return forecast_values
 
 # --- 3. ENDPOINT XỬ LÝ CHÍNH ---
 @app.post("/predict")

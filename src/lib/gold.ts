@@ -137,13 +137,17 @@ export function mockPredict(model: ModelType, days: number): PredictionResult {
 
 export async function fetchPrediction(model: ModelType, days: number): Promise<PredictionResult> {
   try {
-    const res = await fetch("http://127.0.0.1:8000/predict", {
+    const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+    const res = await fetch(`${apiBaseUrl}/predict`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ days_to_predict: days, model_type: model }),
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(30000),
     });
-    if (!res.ok) throw new Error("bad status");
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`Backend trả về HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+    }
     const data = await res.json();
     // If backend returns the compact shape used by this app, return it directly
     if (data && Array.isArray((data as any).series)) {
@@ -201,7 +205,8 @@ export async function fetchPrediction(model: ModelType, days: number): Promise<P
     }
 
     throw new Error("unknown shape");
-  } catch {
-    return mockPredict(model, days);
+  } catch (error) {
+    console.error("Không thể lấy dự báo từ backend:", error);
+    throw error instanceof Error ? error : new Error("Không thể kết nối backend dự báo");
   }
 }
