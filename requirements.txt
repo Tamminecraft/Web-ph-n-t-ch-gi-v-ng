@@ -1,9 +1,9 @@
 fastapi
 uvicorn[standard]
-yfinance
-numpy
-pandas
-tensorflow
+yfinance==0.2.66
+numpy==1.26.4
+pandas==2.2.3
+tensorflow==2.20.0
 joblib
-statsmodels
-scikit-learn
+statsmodels==0.14.4
+scikit-learn==1.6.1
