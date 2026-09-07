@@ -54,14 +54,17 @@ function Index() {
       return;
     }
     setLoading(true);
+    const loadingToast = toast.loading("Đang khởi động máy chủ...");
     try {
-      const r = await fetchPrediction(model, days);
+      const r = await fetchPrediction(model, days, (message) => {
+        toast.loading(message, { id: loadingToast });
+      });
       setResult(r);
       const entry = pushHistory(r);
       setHistory((h) => [entry, ...h].slice(0, 100));
-      toast.success("Phân tích hoàn tất");
+      toast.success("Phân tích hoàn tất", { id: loadingToast });
     } catch (e) {
-      toast.error("Không thể lấy dữ liệu dự đoán");
+      toast.error("Không thể lấy dữ liệu dự đoán. Hãy thử lại sau ít phút.", { id: loadingToast });
     } finally {
       setLoading(false);
     }

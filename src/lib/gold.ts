@@ -135,19 +135,25 @@ export function mockPredict(model: ModelType, days: number): PredictionResult {
   };
 }
 
-export async function fetchPrediction(model: ModelType, days: number): Promise<PredictionResult> {
+export async function fetchPrediction(
+  model: ModelType,
+  days: number,
+  onStatus?: (message: string) => void,
+): Promise<PredictionResult> {
   try {
+    onStatus?.("Đang khởi động máy chủ...");
     const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
     const res = await fetch(`${apiBaseUrl}/predict`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ days_to_predict: days, model_type: model }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(120000),
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       throw new Error(`Backend trả về HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
     }
+    onStatus?.("Đang xử lý dữ liệu và mô hình...");
     const data = await res.json();
     // If backend returns the compact shape used by this app, return it directly
     if (data && Array.isArray((data as any).series)) {
