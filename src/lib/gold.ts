@@ -46,10 +46,50 @@ export const modelLabel: Record<ModelType, string> = {
   LSTM_ARIMA: "Mô hình kết hợp LSTM_ARIMA",
 };
 
+function finiteNumber(value: unknown, fallback = 0): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizeHistoryEntry(raw: Partial<HistoryEntry>): HistoryEntry | null {
+  if (!raw || !Array.isArray(raw.series)) return null;
+
+  const predictedValues = raw.series
+    .map((point) => point?.predicted)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const currentPrice = finiteNumber(raw.currentPrice);
+  const finalPredicted = finiteNumber(
+    raw.finalPredicted,
+    predictedValues.at(-1) ?? finiteNumber(raw.maxPredicted, currentPrice),
+  );
+
+  return {
+    ...raw,
+    id: raw.id || crypto.randomUUID(),
+    model: raw.model || "LSTM",
+    days: Math.max(1, Math.floor(finiteNumber(raw.days, predictedValues.length || 1))),
+    createdAt: finiteNumber(raw.createdAt, Date.now()),
+    currentPrice,
+    finalPredicted,
+    maxPredicted: finiteNumber(raw.maxPredicted, finalPredicted),
+    minPredicted: finiteNumber(raw.minPredicted, finalPredicted),
+    trend: raw.trend === "up" ? "up" : "down",
+    rmse: finiteNumber(raw.rmse),
+    mape: finiteNumber(raw.mape),
+    series: raw.series,
+  } as HistoryEntry;
+}
+
 export function loadHistory(): HistoryEntry[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    const normalized = raw
+      .map((entry) => normalizeHistoryEntry(entry))
+      .filter((entry): entry is HistoryEntry => entry !== null);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(normalized));
+    return normalized;
   } catch {
     return [];
   }
@@ -163,7 +203,22 @@ export async function fetchPrediction(
     const data = await res.json();
     // If backend returns the compact shape used by this app, return it directly
     if (data && Array.isArray((data as any).series)) {
-      return { ...data, model, days, createdAt: Date.now() } as PredictionResult;
+      const series = data.series as PredictionPoint[];
+      const finalPredicted = finiteNumber(
+        data.finalPredicted,
+        series.map((point) => point.predicted).filter((value): value is number => value != null).at(-1) ?? data.maxPredicted,
+      );
+      return {
+        ...data,
+        model,
+        days,
+        createdAt: Date.now(),
+        finalPredicted,
+        maxPredicted: finiteNumber(data.maxPredicted, finalPredicted),
+        currentPrice: finiteNumber(data.currentPrice),
+        rmse: finiteNumber(data.rmse),
+        mape: finiteNumber(data.mape),
+      } as PredictionResult;
     }
 
     // If backend returns the new enriched shape (history + forecast), map it to our PredictionResult
