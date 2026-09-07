@@ -4,8 +4,6 @@ import { Send, X, Loader2 } from 'lucide-react';
 
 interface Msg { role: 'user' | 'model'; text: string; }
 
-const SYSTEM_PROMPT = "Bạn là một chiếc nhẫn vàng thần kỳ, một chuyên gia lão luyện trong lĩnh vực tài chính và thị trường vàng. Bạn trả lời ngắn gọn, thông thái, lịch sự và luôn đưa ra các lời khuyên hữu ích liên quan đến đầu tư vàng, dự đoán giá và kinh tế vĩ mô. Hãy xưng 'ta' và gọi người dùng là 'ngươi' để tăng tính thần bí.";
-
 const STORAGE_KEY = 'goldring_chat_history';
 
 export default function GoldRingChatbot() {
@@ -17,8 +15,12 @@ export default function GoldRingChatbot() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) setMessages(JSON.parse(saved));
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) setMessages(JSON.parse(saved));
+    } catch {
+      localStorage.removeItem(STORAGE_KEY);
+    }
   }, []);
 
   useEffect(() => {
@@ -35,20 +37,15 @@ export default function GoldRingChatbot() {
     setLoading(true);
 
     try {
-      const contents = next.map(m => ({ role: m.role, parts: [{ text: m.text }] }));
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-            contents,
-          }),
-        }
-      );
+      const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const res = await fetch(`${apiBaseUrl}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: next }),
+      });
+      if (!res.ok) throw new Error(`Chatbot request failed: ${res.status}`);
       const data = await res.json();
-      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text ?? 'Ta đang bận suy ngẫm... hãy hỏi lại sau.';
+      const reply = data.reply ?? 'Ta đang bận suy ngẫm... hãy hỏi lại sau.';
       setMessages(m => [...m, { role: 'model', text: reply }]);
     } catch (e) {
       setMessages(m => [...m, { role: 'model', text: 'Có lỗi xảy ra khi kết nối.' }]);

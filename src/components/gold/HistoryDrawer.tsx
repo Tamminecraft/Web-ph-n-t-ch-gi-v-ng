@@ -95,7 +95,7 @@ export function HistoryDrawer({
                       <b>${h.currentPrice.toFixed(2)}</b>{" "}
                       <span className="text-muted-foreground">→ Dự đoán</span>{" "}
                       <b className={h.trend === "up" ? "text-success" : "text-destructive"}>
-                        ${h.maxPredicted.toFixed(2)}
+                        ${h.finalPredicted.toFixed(2)}
                       </b>{" "}
                       {h.trend === "up" ? (
                         <TrendingUp className="inline w-4 h-4 text-success" />
@@ -104,7 +104,7 @@ export function HistoryDrawer({
                       )}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      RMSE ±${h.rmse.toFixed(2)} · MAPE {h.mape.toFixed(2)}%
+                      Baseline RMSE ±${h.rmse.toFixed(2)} · MAPE {h.mape.toFixed(2)}%
                     </div>
                   </div>
                   <div className="flex flex-col gap-2 shrink-0">

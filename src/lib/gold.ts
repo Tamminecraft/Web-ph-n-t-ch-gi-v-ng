@@ -11,10 +11,13 @@ export interface PredictionResult {
   days: number;
   createdAt: number;
   currentPrice: number;
+  finalPredicted: number;
   maxPredicted: number;
+  minPredicted?: number;
   trend: "up" | "down";
   rmse: number;
   mape: number;
+  metricsSource?: string;
   series: PredictionPoint[];
   // Optional enriched fields from the backend
   recommendation?: string;
@@ -118,6 +121,7 @@ export function mockPredict(model: ModelType, days: number): PredictionResult {
   const series = [...history, { date: history[history.length - 1].date, actual: currentPrice, predicted: currentPrice }, ...preds];
   const maxPredicted = Math.max(...preds.map((x) => x.predicted!));
   const minPredicted = Math.min(...preds.map((x) => x.predicted!));
+  const finalPredicted = preds[preds.length - 1].predicted!;
   const trend: "up" | "down" = preds[preds.length - 1].predicted! >= currentPrice ? "up" : "down";
   const rmseBase = model === "LSTM_ARIMA" ? 12 : model === "LSTM" ? 18 : 24;
   const rmse = +(rmseBase + Math.random() * 8).toFixed(2);
@@ -127,7 +131,9 @@ export function mockPredict(model: ModelType, days: number): PredictionResult {
     days,
     createdAt: now,
     currentPrice,
+    finalPredicted,
     maxPredicted: trend === "up" ? maxPredicted : minPredicted,
+    minPredicted,
     trend,
     rmse,
     mape,
@@ -191,16 +197,20 @@ export async function fetchPrediction(
       const baselineMetrics = (data.baseline && data.baseline.metrics) || {};
       const rmse = Number(baselineMetrics.rmse ?? baselineMetrics.RMSE ?? 0);
       const mape = Number(baselineMetrics.mape ?? baselineMetrics.MAPE ?? 0);
+      const finalPredicted = Number(data.final_price ?? forecastValues[forecastValues.length - 1] ?? 0);
 
       return {
         model,
         days,
         createdAt: Date.now(),
         currentPrice: Number(data.current_price ?? currentPrice ?? 0),
+        finalPredicted,
         maxPredicted: Number(data.max_price ?? 0),
+        minPredicted: Number(data.min_price ?? 0),
         trend: data.trend === "up" ? "up" : "down",
         rmse: rmse || 0,
         mape: mape || 0,
+        metricsSource: data.baseline?.source || "baseline_naive",
         series,
         recommendation: data.recommendation,
         strategy_recommendation: data.strategy_recommendation,

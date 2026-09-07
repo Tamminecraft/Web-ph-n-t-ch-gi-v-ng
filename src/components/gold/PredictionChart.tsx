@@ -2,7 +2,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import type { PredictionPoint } from "@/lib/gold";
 
 export function PredictionChart({ data }: { data: PredictionPoint[] }) {
-  const values = data.flatMap((d) => [d.actual, d.predicted].filter(Boolean) as number[]);
+  const values = data.flatMap((d) => [d.actual, d.predicted].filter((value): value is number => value != null && Number.isFinite(value)));
+  if (values.length === 0) {
+    return <div className="w-full h-[420px] flex items-center justify-center text-sm text-muted-foreground">Chưa có dữ liệu biểu đồ.</div>;
+  }
   const min = Math.floor(Math.min(...values) / 50) * 50 - 50;
   const max = Math.ceil(Math.max(...values) / 50) * 50 + 50;
 

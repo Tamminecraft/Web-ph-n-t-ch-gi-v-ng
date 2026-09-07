@@ -9,6 +9,9 @@ import joblib
 import pickle
 import os
 import traceback
+import json
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from model_utils import (
     build_confidence_interval,
@@ -28,7 +31,13 @@ app = FastAPI(title="AI Gold Predictor API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        origin.strip()
+        for origin in os.getenv(
+            "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+        ).split(",")
+        if origin.strip()
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -414,13 +423,17 @@ async def predict_gold_price(request: PredictRequest):
         naive_forecast = build_naive_forecast(close_prices.tolist(), days)
         baseline_metrics = compute_metrics(close_prices[-days:], naive_forecast)
         signal_summary = summarize_price_signal(hist['Close'].tail(10).tolist())
-        confidence_interval = build_confidence_interval([float(x) for x in close_prices[-10:]], scale=0.01)
+        confidence_interval = build_confidence_interval(
+            [float(x) for x in close_prices[-10:]], scale=0.01, horizon=days
+        )
         recommendation = build_recommendation(signal_summary, hist['Close'].tail(10).tolist(), current_price)
         strategy_recommendation = build_strategy_recommendation(signal_summary, current_price)
         signal_label = build_signal_label(signal_summary)
         confidence_label = build_confidence_label(baseline_metrics)
         forecast_labels = [f"+{i+1}" for i in range(days)]
         max_predicted_price = round(float(max(forecast_values)), 2)
+        min_predicted_price = round(float(min(forecast_values)), 2)
+        final_predicted_price = round(float(forecast_values[-1]), 2)
 
         print("[SUCCESS] Tính toán AI thành công!")
         
@@ -435,11 +448,14 @@ async def predict_gold_price(request: PredictRequest):
             },
             "current_price": current_price,
             "max_price": max_predicted_price,
+            "min_price": min_predicted_price,
+            "final_price": final_predicted_price,
             "trend": "up" if forecast_values[-1] > current_price else "down",
             "selected_model": request.model_type,
             "baseline": {
                 "forecast": [round(float(x), 2) for x in naive_forecast],
                 "metrics": baseline_metrics,
+                "source": "naive_last_value",
             },
             "signal": signal_summary,
             "confidence_interval": confidence_interval,
@@ -453,6 +469,51 @@ async def predict_gold_price(request: PredictRequest):
         print("\n❌ LỖI CHI TIẾT TRONG QUÁ TRÌNH XỬ LÝ API:")
         traceback.print_exc()
         raise e
+
+
+@app.post("/chat")
+async def chat_with_gold_ring(payload: dict):
+    """Proxy chatbot requests so the Gemini key is never exposed in the browser."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY chưa được cấu hình")
+
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or not messages:
+        raise ValueError("messages phải là một danh sách không rỗng")
+
+    contents = []
+    for message in messages[-20:]:
+        if not isinstance(message, dict) or message.get("role") not in {"user", "model"}:
+            raise ValueError("Tin nhắn không hợp lệ")
+        text = message.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("Nội dung tin nhắn không hợp lệ")
+        contents.append({"role": message["role"], "parts": [{"text": text.strip()}]})
+
+    body = json.dumps({
+        "systemInstruction": {
+            "parts": [{
+                "text": "Bạn là chuyên gia phân tích thị trường vàng. Trả lời ngắn gọn bằng tiếng Việt, nêu rõ khi thông tin chỉ mang tính tham khảo và không đưa ra cam kết lợi nhuận."
+            }]
+        },
+        "contents": contents,
+    }).encode("utf-8")
+    model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    request = Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError) as exc:
+        raise RuntimeError("Không thể kết nối dịch vụ chatbot") from exc
+
+    reply = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+    return {"reply": reply or "Ta đang bận suy ngẫm... hãy hỏi lại sau."}
 
 
 if __name__ == "__main__":

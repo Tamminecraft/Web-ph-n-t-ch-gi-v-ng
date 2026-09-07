@@ -131,7 +131,9 @@ def summarize_price_signal(series: Sequence[float]) -> dict[str, float | str]:
     }
 
 
-def build_confidence_interval(series: Sequence[float], scale: float = 0.03) -> dict[str, list[float]]:
+def build_confidence_interval(
+    series: Sequence[float], scale: float = 0.03, horizon: int | None = None
+) -> dict[str, list[float]]:
     """Build a simple confidence interval around a forecast by using recent volatility."""
     values = np.asarray(series, dtype=float)
     if values.size == 0:
@@ -140,9 +142,12 @@ def build_confidence_interval(series: Sequence[float], scale: float = 0.03) -> d
     base = values[-1]
     recent_vol = float(np.std(np.diff(values))) if len(values) > 2 else 0.0
     band = max(recent_vol, abs(base) * scale)
-    horizon = np.arange(1, len(values) + 1, dtype=float)
-    lower = base + (horizon * band * -1.0)
-    upper = base + (horizon * band)
+    steps = int(horizon) if horizon is not None else len(values)
+    if steps < 1:
+        raise ValueError("horizon phải lớn hơn 0")
+    horizon_values = np.arange(1, steps + 1, dtype=float)
+    lower = base + (horizon_values * band * -1.0)
+    upper = base + (horizon_values * band)
 
     return {
         "lower": [round(float(x), 2) for x in lower],

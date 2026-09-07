@@ -304,9 +304,9 @@ function MetricsGrid({ result }: { result: PredictionResult }) {
     <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
       <MetricCard label="Giá hiện tại" value={`$${result.currentPrice.toFixed(1)}`} sub="USD / oz" />
       <MetricCard
-        label="Giá dự đoán cao nhất"
-        value={<span className="text-gold-dark">${result.maxPredicted.toFixed(1)}</span>}
-        sub="Trong khoảng dự đoán"
+        label="Giá dự báo cuối kỳ"
+        value={<span className="text-gold-dark">${result.finalPredicted.toFixed(1)}</span>}
+        sub={`Sau ${result.days} ngày dự báo`}
         tone="gold"
       />
       <MetricCard
@@ -338,19 +338,19 @@ function MetricsGrid({ result }: { result: PredictionResult }) {
 
 function AIInsights({ result }: { result: PredictionResult }) {
   const reliability = useMemo(() => {
-    if (result.mape < 1) return { label: "Rất cao", tone: "text-success", desc: "Mô hình có độ chính xác rất cao." };
-    if (result.mape < 2.5) return { label: "Cao", tone: "text-success", desc: "Sai số ở mức thấp, đáng tin cậy." };
-    if (result.mape < 5) return { label: "Trung bình", tone: "text-gold-dark", desc: "Có thể tham khảo nhưng cần thận trọng." };
-    return { label: "Thấp", tone: "text-destructive", desc: "Sai số cao — chỉ nên dùng như tham khảo phụ." };
+    if (result.mape < 1) return { label: "Tốt", tone: "text-success", desc: "Baseline có sai số thấp; chưa phải đánh giá riêng của model." };
+    if (result.mape < 2.5) return { label: "Khá", tone: "text-success", desc: "Baseline có sai số tương đối thấp; cần đối chiếu backtest." };
+    if (result.mape < 5) return { label: "Trung bình", tone: "text-gold-dark", desc: "Baseline chỉ mang tính tham khảo, cần thận trọng." };
+    return { label: "Cao", tone: "text-destructive", desc: "Baseline có sai số cao; không nên xem là độ chính xác của model." };
   }, [result.mape]);
 
-  const change = result.maxPredicted - result.currentPrice;
+  const change = result.finalPredicted - result.currentPrice;
   const changePct = (change / result.currentPrice) * 100;
   const trendText = result.trend === "up" ? "TĂNG" : "GIẢM";
   const recommendation =
     result.trend === "up"
-      ? `Mô hình ${modelLabel[result.model]} dự báo xu hướng ${trendText} khoảng ${Math.abs(changePct).toFixed(2)}% trong ${result.days} ngày tới với MAPE ${result.mape.toFixed(2)}%. Có thể cân nhắc nắm giữ / mua tích lũy ngắn hạn.`
-      : `Mô hình ${modelLabel[result.model]} dự báo xu hướng ${trendText} khoảng ${Math.abs(changePct).toFixed(2)}% trong ${result.days} ngày tới với MAPE ${result.mape.toFixed(2)}%. Nhà đầu tư nên thận trọng, cân nhắc chốt lời hoặc chờ mua vào giá tốt hơn.`;
+      ? `Mô hình ${modelLabel[result.model]} dự báo xu hướng ${trendText} khoảng ${Math.abs(changePct).toFixed(2)}% trong ${result.days} ngày tới. MAPE đang hiển thị là baseline tham chiếu, không phải độ chính xác riêng của model. Có thể cân nhắc nắm giữ / mua tích lũy ngắn hạn.`
+      : `Mô hình ${modelLabel[result.model]} dự báo xu hướng ${trendText} khoảng ${Math.abs(changePct).toFixed(2)}% trong ${result.days} ngày tới. MAPE đang hiển thị là baseline tham chiếu, không phải độ chính xác riêng của model. Nhà đầu tư nên thận trọng, cân nhắc chốt lời hoặc chờ mua vào giá tốt hơn.`;
 
   // Prefer backend-provided recommendation/strategy if available
   const backendRecommendation = (result as any).recommendation || recommendation;
@@ -381,7 +381,7 @@ function AIInsights({ result }: { result: PredictionResult }) {
                   </div>
                 )}
               </div>
-              <p className="mt-3 text-sm text-muted-foreground">{reliability.desc} (MAPE {result.mape.toFixed(2)}%)</p>
+              <p className="mt-3 text-sm text-muted-foreground">{reliability.desc} (MAPE baseline {result.mape.toFixed(2)}%)</p>
             </div>
             <div className="rounded-[1.75rem] bg-white/85 border border-white/70 p-5 shadow-card transition-all duration-300 hover:-translate-y-0.5">
               <div className="flex items-center justify-between gap-3">
