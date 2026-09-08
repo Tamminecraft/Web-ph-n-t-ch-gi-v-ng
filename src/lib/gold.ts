@@ -4,6 +4,8 @@ export interface PredictionPoint {
   date: string;
   actual?: number;
   predicted?: number;
+  confidenceLower?: number;
+  confidenceUpper?: number;
 }
 
 export interface PredictionResult {
@@ -17,6 +19,8 @@ export interface PredictionResult {
   trend: "up" | "down";
   rmse: number;
   mape: number;
+  modelMetrics?: { rmse: number; mape: number; source: string };
+  baselineMetrics?: { rmse: number; mape: number; source: string };
   metricsSource?: string;
   series: PredictionPoint[];
   // Optional enriched fields from the backend
@@ -37,8 +41,6 @@ export interface AuthUser {
 }
 
 const HISTORY_KEY = "gold_history_v1";
-const USER_KEY = "gold_user_v1";
-const USERS_KEY = "gold_users_v1";
 
 export const modelLabel: Record<ModelType, string> = {
   LSTM: "Mô hình LSTM",
@@ -105,37 +107,6 @@ export function pushHistory(r: PredictionResult): HistoryEntry {
   return entry;
 }
 
-export function loadUser(): AuthUser | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return JSON.parse(localStorage.getItem(USER_KEY) || "null");
-  } catch {
-    return null;
-  }
-}
-export function saveUser(u: AuthUser | null) {
-  if (u) localStorage.setItem(USER_KEY, JSON.stringify(u));
-  else localStorage.removeItem(USER_KEY);
-}
-interface StoredUser {
-  name: string;
-  email: string;
-  password: string;
-}
-export function registerUser(name: string, email: string, password: string): AuthUser {
-  const users: StoredUser[] = JSON.parse(localStorage.getItem(USERS_KEY) || "[]");
-  if (users.find((u) => u.email === email)) throw new Error("Email đã được đăng ký");
-  users.push({ name, email, password });
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  return { name, email };
-}
-export function loginUser(email: string, password: string): AuthUser {
-  const users: StoredUser[] = JSON.parse(localStorage.getItem(USERS_KEY) || "[]");
-  const u = users.find((x) => x.email === email && x.password === password);
-  if (!u) throw new Error("Email hoặc mật khẩu không đúng");
-  return { name: u.name, email: u.email };
-}
-
 // Fallback mock prediction when the backend is unreachable
 export function mockPredict(model: ModelType, days: number): PredictionResult {
   const now = Date.now();
@@ -186,9 +157,12 @@ export async function fetchPrediction(
   days: number,
   onStatus?: (message: string) => void,
 ): Promise<PredictionResult> {
-  try {
+  const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
     onStatus?.("Đang khởi động máy chủ...");
-    const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
     const res = await fetch(`${apiBaseUrl}/predict`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -218,6 +192,8 @@ export async function fetchPrediction(
         currentPrice: finiteNumber(data.currentPrice),
         rmse: finiteNumber(data.rmse),
         mape: finiteNumber(data.mape),
+        modelMetrics: data.modelMetrics,
+        baselineMetrics: data.baselineMetrics,
       } as PredictionResult;
     }
 
@@ -246,10 +222,18 @@ export async function fetchPrediction(
         }
       }
       for (let i = 0; i < forecastLabels.length; i++) {
-        series.push({ date: String(forecastLabels[i]), predicted: Number(forecastValues[i]) });
+        const lower = data.confidence_interval?.lower?.[i];
+        const upper = data.confidence_interval?.upper?.[i];
+        series.push({
+          date: String(forecastLabels[i]),
+          predicted: Number(forecastValues[i]),
+          confidenceLower: lower == null ? undefined : Number(lower),
+          confidenceUpper: upper == null ? undefined : Number(upper),
+        });
       }
 
       const baselineMetrics = (data.baseline && data.baseline.metrics) || {};
+      const modelMetrics = data.model_metrics || {};
       const rmse = Number(baselineMetrics.rmse ?? baselineMetrics.RMSE ?? 0);
       const mape = Number(baselineMetrics.mape ?? baselineMetrics.MAPE ?? 0);
       const finalPredicted = Number(data.final_price ?? forecastValues[forecastValues.length - 1] ?? 0);
@@ -266,6 +250,16 @@ export async function fetchPrediction(
         rmse: rmse || 0,
         mape: mape || 0,
         metricsSource: data.baseline?.source || "baseline_naive",
+        modelMetrics: data.model_metrics ? {
+          rmse: Number(modelMetrics.rmse ?? 0),
+          mape: Number(modelMetrics.mape ?? 0),
+          source: String(modelMetrics.source ?? "model_forecast"),
+        } : undefined,
+        baselineMetrics: {
+          rmse: rmse || 0,
+          mape: mape || 0,
+          source: String(data.baseline?.source ?? "baseline_naive"),
+        },
         series,
         recommendation: data.recommendation,
         strategy_recommendation: data.strategy_recommendation,
@@ -276,8 +270,16 @@ export async function fetchPrediction(
     }
 
     throw new Error("unknown shape");
-  } catch (error) {
-    console.error("Không thể lấy dự báo từ backend:", error);
-    throw error instanceof Error ? error : new Error("Không thể kết nối backend dự báo");
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0) {
+        onStatus?.("Máy chủ đang khởi động, tự thử lại...");
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        continue;
+      }
+    }
   }
+
+  console.error("Không thể lấy dự báo từ backend:", lastError);
+  throw lastError instanceof Error ? lastError : new Error("Không thể kết nối backend dự báo");
 }

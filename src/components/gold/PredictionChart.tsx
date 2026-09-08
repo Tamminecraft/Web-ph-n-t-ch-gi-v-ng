@@ -40,9 +40,35 @@ export function PredictionChart({ data }: { data: PredictionPoint[] }) {
           <Legend
             iconType="circle"
             wrapperStyle={{ fontSize: 12 }}
-            formatter={(v) => (v === "actual" ? "Thực tế" : "Dự đoán")}
+            formatter={(v) => {
+              if (v === "actual") return "Thực tế";
+              if (v === "predicted") return "Dự đoán";
+              if (v === "confidenceLower") return "Khoảng thấp";
+              if (v === "confidenceUpper") return "Khoảng cao";
+              return v;
+            }}
           />
           <Area type="monotone" dataKey="predicted" fill="url(#goldFill)" stroke="none" />
+          <Line
+            type="monotone"
+            dataKey="confidenceLower"
+            stroke="oklch(0.66 0.13 78)"
+            strokeDasharray="3 4"
+            strokeOpacity={0.45}
+            dot={false}
+            connectNulls={false}
+            name="Khoảng thấp"
+          />
+          <Line
+            type="monotone"
+            dataKey="confidenceUpper"
+            stroke="oklch(0.66 0.13 78)"
+            strokeDasharray="3 4"
+            strokeOpacity={0.45}
+            dot={false}
+            connectNulls={false}
+            name="Khoảng cao"
+          />
           <Line
             type="monotone"
             dataKey="actual"

@@ -44,6 +44,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+APP_VERSION = os.getenv("APP_VERSION", os.getenv("RENDER_GIT_COMMIT", "local"))
+
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "version": APP_VERSION,
+        "models": {
+            "LSTM": lstm_model is not None,
+            "ARIMA": arima_model is not None,
+            "LSTM_ARIMA": lstm_arima_model is not None,
+        },
+    }
+
 # --- 1. LOAD MÔ HÌNH VÀ SCALER ---
 print("--- Đang nạp các mô hình AI ---")
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
@@ -458,6 +473,8 @@ async def predict_gold_price(request: PredictRequest):
                 "metrics": baseline_metrics,
                 "source": "naive_last_value",
             },
+            "model_metrics": None,
+            "model_metrics_note": "Model metrics cần rolling backtest riêng; không suy diễn từ forecast hiện tại.",
             "signal": signal_summary,
             "confidence_interval": confidence_interval,
             "recommendation": recommendation,

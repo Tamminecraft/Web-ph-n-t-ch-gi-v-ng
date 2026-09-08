@@ -14,8 +14,10 @@ import { toast } from "sonner";
 import { PredictionChart } from "@/components/gold/PredictionChart";
 import { AuthDialog } from "@/components/gold/AuthDialog";
 import { HistoryDrawer } from "@/components/gold/HistoryDrawer";
+import GoldRingChatbot from "@/components/GoldRingChatbot";
+import { supabase } from "@/lib/supabase";
 import {
-  fetchPrediction, loadHistory, loadUser, modelLabel, pushHistory, saveHistory, saveUser,
+  fetchPrediction, loadHistory, modelLabel, pushHistory, saveHistory,
   type AuthUser, type HistoryEntry, type ModelType, type PredictionResult,
 } from "@/lib/gold";
 
@@ -45,7 +47,23 @@ function Index() {
 
   useEffect(() => {
     setHistory(loadHistory());
-    setUser(loadUser());
+    supabase.auth.getSession().then(({ data }) => {
+      const sessionUser = data.session?.user;
+      if (sessionUser) {
+        setUser({
+          name: sessionUser.user_metadata?.full_name || sessionUser.email?.split("@")[0] || "User",
+          email: sessionUser.email || "",
+        });
+      }
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const sessionUser = session?.user;
+      setUser(sessionUser ? {
+        name: sessionUser.user_metadata?.full_name || sessionUser.email?.split("@")[0] || "User",
+        email: sessionUser.email || "",
+      } : null);
+    });
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   const handleAnalyze = async () => {
@@ -86,7 +104,7 @@ function Index() {
       <Header
         user={user}
         onLogin={() => setAuthOpen(true)}
-        onLogout={() => { saveUser(null); setUser(null); toast.success("Đã đăng xuất"); }}
+        onLogout={async () => { await supabase.auth.signOut(); toast.success("Đã đăng xuất"); }}
         onOpenHistory={() => setHistoryOpen(true)}
         historyCount={history.length}
       />
@@ -115,7 +133,7 @@ function Index() {
       <AuthDialog
         open={authOpen}
         onOpenChange={setAuthOpen}
-        onAuth={(u) => { saveUser(u); setUser(u); }}
+        onAuth={setUser}
       />
       <HistoryDrawer
         open={historyOpen}
@@ -125,6 +143,7 @@ function Index() {
         onDeleteFiltered={deleteFiltered}
         onReplay={(h) => { setResult(h); setModel(h.model); setDays(h.days); }}
       />
+      <GoldRingChatbot />
     </div>
   );
 }
@@ -321,15 +340,15 @@ function MetricsGrid({ result }: { result: PredictionResult }) {
         tone={result.trend === "up" ? "up" : "down"}
       />
       <MetricCard
-        label="Độ sai lệch RMSE"
+        label="RMSE baseline"
         value={`± $${result.rmse.toFixed(2)}`}
-        sub="Sai số tuyệt đối"
+        sub="Naive last-value"
         icon={<Target className="w-4 h-4 text-gold-dark" />}
       />
       <MetricCard
-        label="Độ sai lệch MAPE"
+        label="MAPE baseline"
         value={`${result.mape.toFixed(2)}%`}
-        sub="Sai số phần trăm"
+        sub="Không phải metric riêng của model"
         icon={<Percent className="w-4 h-4 text-gold-dark" />}
       />
     </section>

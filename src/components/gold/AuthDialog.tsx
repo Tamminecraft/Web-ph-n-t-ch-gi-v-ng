@@ -3,7 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { loginUser, registerUser, type AuthUser } from "@/lib/gold";
+import { supabase } from "@/lib/supabase";
+import type { AuthUser } from "@/lib/gold";
 import { toast } from "sonner";
 
 export function AuthDialog({
@@ -21,12 +22,21 @@ export function AuthDialog({
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const user = mode === "login" ? loginUser(email, password) : registerUser(name, email, password);
-      onAuth(user);
+      const action = mode === "login"
+        ? supabase.auth.signInWithPassword({ email, password })
+        : supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { full_name: name }, emailRedirectTo: window.location.origin },
+          });
+      const { data, error } = await action;
+      if (error) throw error;
+      const user = data.user;
+      if (user) onAuth({ name: user.user_metadata?.full_name || name || email.split("@")[0], email: user.email || email });
       toast.success(mode === "login" ? "Đăng nhập thành công" : "Tạo tài khoản thành công");
       onOpenChange(false);
       setName(""); setEmail(""); setPassword("");
