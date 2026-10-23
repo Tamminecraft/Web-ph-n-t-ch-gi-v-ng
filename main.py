@@ -517,7 +517,7 @@ async def chat_with_gold_ring(payload: dict):
         },
         "contents": contents,
     }).encode("utf-8")
-    model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
     request = Request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
         data=body,
