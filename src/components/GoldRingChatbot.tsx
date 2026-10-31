@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Send, X, Loader2 } from 'lucide-react';
-import { getApiBaseUrl } from '@/lib/gold';
+import type { MLCEngineInterface } from '@mlc-ai/web-llm';
 
 interface Msg { role: 'user' | 'model'; text: string; error?: boolean; }
 
 const STORAGE_KEY = 'goldring_chat_history';
+const MODEL_ID = 'Llama-3.2-1B-Instruct-q4f16_1-MLC';
+const SYSTEM_PROMPT = 'Bạn là chuyên gia phân tích thị trường vàng. Trả lời ngắn gọn bằng tiếng Việt, nêu rõ khi thông tin chỉ mang tính tham khảo và không đưa ra cam kết lợi nhuận.';
 
 function isMessage(value: unknown): value is Msg {
   if (!value || typeof value !== 'object') return false;
@@ -21,7 +23,34 @@ export default function GoldRingChatbot() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [modelStatus, setModelStatus] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const engineRef = useRef<MLCEngineInterface | null>(null);
+
+  const getEngine = async (): Promise<MLCEngineInterface> => {
+    if (engineRef.current) return engineRef.current;
+    if (!window.isSecureContext || !('gpu' in navigator)) {
+      throw new Error(t('chatbot.webGpuUnsupported'));
+    }
+
+    setModelStatus(t('chatbot.loadingModel'));
+    const worker = new Worker(new URL('../workers/webllm.worker.ts', import.meta.url), { type: 'module' });
+
+    try {
+      const { CreateWebWorkerMLCEngine } = await import('@mlc-ai/web-llm');
+      const engine = await CreateWebWorkerMLCEngine(worker, MODEL_ID, {
+        initProgressCallback: ({ progress }) => {
+          setModelStatus(t('chatbot.downloadingModel', { progress: Math.round(progress * 100) }));
+        },
+      });
+      engineRef.current = engine;
+      setModelStatus(t('chatbot.modelReady'));
+      return engine;
+    } catch (error) {
+      worker.terminate();
+      throw error;
+    }
+  };
 
   useEffect(() => {
     try {
@@ -58,28 +87,20 @@ export default function GoldRingChatbot() {
     setLoading(true);
 
     try {
-      const apiBaseUrl = getApiBaseUrl();
-      const res = await fetch(`${apiBaseUrl}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: next.filter(message => !message.error).slice(-20).map(({ role, text }) => ({ role, text })),
-        }),
-        signal: AbortSignal.timeout(35000),
+      const engine = await getEngine();
+      setModelStatus(t('chatbot.thinking'));
+      const history = next.filter(message => !message.error).slice(-20).map(({ role, text }) => ({
+        role: role === 'model' ? 'assistant' as const : 'user' as const,
+        content: text,
+      }));
+      const response = await engine.chat.completions.create({
+        messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
+        temperature: 0.6,
+        max_tokens: 256,
       });
-      const data: unknown = await res.json().catch(() => null);
-      if (!res.ok) {
-        const detail = data && typeof data === 'object' && 'detail' in data
-          && typeof data.detail === 'string'
-          ? data.detail
-          : `Máy chủ chatbot trả về lỗi HTTP ${res.status}.`;
-        throw new Error(detail);
-      }
-      if (!data || typeof data !== 'object' || !('reply' in data)
-        || typeof data.reply !== 'string' || !data.reply.trim()) {
-        throw new Error('Máy chủ chatbot không trả về câu trả lời hợp lệ.');
-      }
-      const reply = data.reply.trim();
+      const content = response.choices[0]?.message.content;
+      const reply = typeof content === 'string' ? content.trim() : '';
+      if (!reply) throw new Error(t('chatbot.emptyResponse'));
       setMessages(m => [...m, { role: 'model', text: reply }]);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Lỗi không xác định.';
@@ -108,6 +129,7 @@ export default function GoldRingChatbot() {
               <div>
                 <div className="font-bold">{t('chatbot.title')}</div>
                 <div className="text-xs opacity-90">{t('chatbot.subtitle')}</div>
+                <div className="text-[10px] opacity-80">{t('chatbot.localModelNotice')}</div>
               </div>
             </div>
             <button onClick={() => setOpen(false)} className="hover:bg-white/20 rounded-full p-1"><X size={20} /></button>
@@ -132,7 +154,7 @@ export default function GoldRingChatbot() {
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center text-sm">💍</div>
                 <div className="bg-white border border-yellow-200 rounded-2xl px-4 py-3 flex items-center gap-2">
                   <Loader2 className="animate-spin text-yellow-600" size={16} />
-                  <span className="text-xs text-gray-500">Đang suy ngẫm...</span>
+                  <span className="text-xs text-gray-500">{modelStatus || t('chatbot.thinking')}</span>
                 </div>
               </div>
             )}
