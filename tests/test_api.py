@@ -39,12 +39,12 @@ class TestPredictionApi(unittest.TestCase):
         self.assertIn("LSTM", response.json()["models"])
 
     def test_health_reports_configured_chat_provider_and_model(self):
-        with patch.dict(os.environ, {"OPENROUTER_MODEL": "test/model"}):
+        with patch.dict(os.environ, {"GROQ_MODEL": "test-model"}):
             response = self.client.get("/health")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["chat_provider"], "openrouter")
-        self.assertEqual(response.json()["chat_model"], "test/model")
+        self.assertEqual(response.json()["chat_provider"], "groq")
+        self.assertEqual(response.json()["chat_model"], "test-model")
 
     def test_predict_contract_for_all_models(self):
         for model in ("LSTM", "ARIMA", "LSTM_ARIMA"):
@@ -84,12 +84,12 @@ class TestChatApi(unittest.TestCase):
         )
         self.assertIn("POST", response.headers["access-control-allow-methods"])
 
-    def test_chat_reports_missing_openrouter_key_as_service_unavailable(self):
-        with patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}):
+    def test_chat_reports_missing_groq_key_as_service_unavailable(self):
+        with patch.dict(os.environ, {"GROQ_API_KEY": ""}):
             response = self.client.post("/chat", json={"messages": [{"role": "user", "text": "Xin chào"}]})
 
         self.assertEqual(response.status_code, 503)
-        self.assertIn("OPENROUTER_API_KEY", response.json()["detail"])
+        self.assertIn("GROQ_API_KEY", response.json()["detail"])
 
     def test_chat_returns_provider_reply(self):
         provider_response = MagicMock()
@@ -101,8 +101,8 @@ class TestChatApi(unittest.TestCase):
             patch.dict(
                 os.environ,
                 {
-                    "OPENROUTER_API_KEY": "test-key",
-                    "OPENROUTER_MODEL": "test/model",
+                    "GROQ_API_KEY": "test-key",
+                    "GROQ_MODEL": "test-model",
                 },
                 clear=False,
             ),
@@ -123,9 +123,9 @@ class TestChatApi(unittest.TestCase):
         self.assertEqual(response.json(), {"reply": "Xin chào bạn."})
         request = urlopen.call_args.args[0]
         request_body = json.loads(request.data.decode("utf-8"))
-        self.assertEqual(request.full_url, "https://openrouter.ai/api/v1/chat/completions")
+        self.assertEqual(request.full_url, "https://api.groq.com/openai/v1/chat/completions")
         self.assertEqual(request.get_header("Authorization"), "Bearer test-key")
-        self.assertEqual(request_body["model"], "test/model")
+        self.assertEqual(request_body["model"], "test-model")
         self.assertEqual(
             [message["role"] for message in request_body["messages"]],
             ["system", "user", "assistant", "user"],
@@ -133,14 +133,14 @@ class TestChatApi(unittest.TestCase):
 
     def test_chat_maps_provider_http_errors_to_bad_gateway(self):
         provider_error = HTTPError(
-            "https://openrouter.ai/api/v1/chat/completions",
+            "https://api.groq.com/openai/v1/chat/completions",
             404,
             "Not Found",
             {},
             BytesIO(b'{"error":{"message":"No provider can serve this request"}}'),
         )
         with (
-            patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False),
+            patch.dict(os.environ, {"GROQ_API_KEY": "test-key"}, clear=False),
             patch.object(main, "urlopen", side_effect=provider_error),
         ):
             response = self.client.post("/chat", json={"messages": [{"role": "user", "text": "Xin chào"}]})

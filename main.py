@@ -49,11 +49,11 @@ app.add_middleware(
 )
 
 APP_VERSION = os.getenv("APP_VERSION", os.getenv("RENDER_GIT_COMMIT", "local"))
-DEFAULT_OPENROUTER_MODEL = "google/gemini-2.5-flash"
+DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
-def get_openrouter_model() -> str:
-    return os.getenv("OPENROUTER_MODEL", "").strip() or DEFAULT_OPENROUTER_MODEL
+def get_groq_model() -> str:
+    return os.getenv("GROQ_MODEL", "").strip() or DEFAULT_GROQ_MODEL
 
 
 @app.get("/health")
@@ -61,8 +61,8 @@ async def health():
     return {
         "status": "ok",
         "version": APP_VERSION,
-        "chat_provider": "openrouter",
-        "chat_model": get_openrouter_model(),
+        "chat_provider": "groq",
+        "chat_model": get_groq_model(),
         "models": {
             "LSTM": lstm_model is not None,
             "ARIMA": arima_model is not None,
@@ -502,10 +502,10 @@ async def predict_gold_price(request: PredictRequest):
 
 @app.post("/chat")
 async def chat_with_gold_ring(payload: dict):
-    """Proxy chatbot requests so the OpenRouter key is never exposed in the browser."""
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    """Proxy chatbot requests so the Groq key is never exposed in the browser."""
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=503, detail="Dịch vụ chatbot chưa được cấu hình OPENROUTER_API_KEY.")
+        raise HTTPException(status_code=503, detail="Dịch vụ chatbot chưa được cấu hình GROQ_API_KEY.")
 
     messages = payload.get("messages")
     if not isinstance(messages, list) or not messages:
@@ -527,17 +527,15 @@ async def chat_with_gold_ring(payload: dict):
         })
 
     body = json.dumps({
-        "model": get_openrouter_model(),
+        "model": get_groq_model(),
         "messages": chat_messages,
     }).encode("utf-8")
     request = Request(
-        "https://openrouter.ai/api/v1/chat/completions",
+        "https://api.groq.com/openai/v1/chat/completions",
         data=body,
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://goldprediction.netlify.app",
-            "X-Title": "Gold Predictor",
         },
         method="POST",
     )
@@ -554,7 +552,7 @@ async def chat_with_gold_ring(payload: dict):
         except (UnicodeDecodeError, json.JSONDecodeError):
             pass
 
-        print(f"OpenRouter API trả về HTTP {exc.code}" + (f": {provider_message}" if provider_message else ""))
+        print(f"Groq API trả về HTTP {exc.code}" + (f": {provider_message}" if provider_message else ""))
         detail = f"Dịch vụ chatbot trả về HTTP {exc.code}."
         if provider_message:
             detail += f" Chi tiết: {provider_message}"
