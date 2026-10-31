@@ -1,3 +1,4 @@
+from io import BytesIO
 import json
 import os
 import unittest
@@ -36,6 +37,13 @@ class TestPredictionApi(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
         self.assertIn("LSTM", response.json()["models"])
+
+    def test_health_reports_configured_gemini_model(self):
+        with patch.dict(os.environ, {"GEMINI_MODEL": "gemini-test-model"}):
+            response = self.client.get("/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["gemini_model"], "gemini-test-model")
 
     def test_predict_contract_for_all_models(self):
         for model in ("LSTM", "ARIMA", "LSTM_ARIMA"):
@@ -98,7 +106,13 @@ class TestChatApi(unittest.TestCase):
         self.assertEqual(response.json(), {"reply": "Xin chào bạn."})
 
     def test_chat_maps_provider_http_errors_to_bad_gateway(self):
-        provider_error = HTTPError("https://example.test", 404, "Not Found", {}, None)
+        provider_error = HTTPError(
+            "https://example.test",
+            404,
+            "Not Found",
+            {},
+            BytesIO(b'{"error":{"message":"Model not found for generateContent"}}'),
+        )
         with (
             patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False),
             patch.object(main, "urlopen", side_effect=provider_error),
@@ -107,6 +121,7 @@ class TestChatApi(unittest.TestCase):
 
         self.assertEqual(response.status_code, 502)
         self.assertIn("HTTP 404", response.json()["detail"])
+        self.assertIn("Model not found for generateContent", response.json()["detail"])
 
 
 if __name__ == "__main__":

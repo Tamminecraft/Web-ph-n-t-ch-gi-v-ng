@@ -49,6 +49,11 @@ app.add_middleware(
 )
 
 APP_VERSION = os.getenv("APP_VERSION", os.getenv("RENDER_GIT_COMMIT", "local"))
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+
+
+def get_gemini_model() -> str:
+    return os.getenv("GEMINI_MODEL", "").strip() or DEFAULT_GEMINI_MODEL
 
 
 @app.get("/health")
@@ -56,6 +61,7 @@ async def health():
     return {
         "status": "ok",
         "version": APP_VERSION,
+        "gemini_model": get_gemini_model(),
         "models": {
             "LSTM": lstm_model is not None,
             "ARIMA": arima_model is not None,
@@ -521,7 +527,7 @@ async def chat_with_gold_ring(payload: dict):
         },
         "contents": contents,
     }).encode("utf-8")
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model = get_gemini_model()
     request = Request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
         data=body,
@@ -532,8 +538,23 @@ async def chat_with_gold_ring(payload: dict):
         with urlopen(request, timeout=30) as response:
             data = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
-        print(f"Gemini API trả về HTTP {exc.code}")
-        raise HTTPException(status_code=502, detail=f"Dịch vụ Gemini trả về HTTP {exc.code}.") from exc
+        provider_message = ""
+        try:
+            error_data = json.loads(exc.read().decode("utf-8"))
+            error = error_data.get("error", {}) if isinstance(error_data, dict) else {}
+            if isinstance(error, dict) and isinstance(error.get("message"), str):
+                provider_message = error["message"].strip()[:500]
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            pass
+
+        print(
+            f"Gemini API trả về HTTP {exc.code} cho model {model!r}"
+            + (f": {provider_message}" if provider_message else "")
+        )
+        detail = f"Dịch vụ Gemini trả về HTTP {exc.code} cho model {model!r}."
+        if provider_message:
+            detail += f" Chi tiết: {provider_message}"
+        raise HTTPException(status_code=502, detail=detail) from exc
     except URLError as exc:
         raise HTTPException(status_code=502, detail="Không thể kết nối dịch vụ chatbot.") from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
