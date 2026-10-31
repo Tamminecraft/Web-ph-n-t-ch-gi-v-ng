@@ -58,6 +58,23 @@ class TestChatApi(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(main.app)
 
+    def test_chat_preflight_allows_production_site(self):
+        response = self.client.options(
+            "/chat",
+            headers={
+                "Origin": "https://goldprediction.netlify.app",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers["access-control-allow-origin"],
+            "https://goldprediction.netlify.app",
+        )
+        self.assertIn("POST", response.headers["access-control-allow-methods"])
+
     def test_chat_reports_missing_api_key_as_service_unavailable(self):
         with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
             response = self.client.post("/chat", json={"messages": [{"role": "user", "text": "Xin chào"}]})
