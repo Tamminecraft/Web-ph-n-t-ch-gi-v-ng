@@ -24,11 +24,17 @@ export function AuthDialog({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const client = supabase;
+    if (!client) {
+      toast.error("Tính năng tài khoản chưa được cấu hình.");
+      return;
+    }
+
     setLoading(true);
     try {
       const action = mode === "login"
-        ? supabase.auth.signInWithPassword({ email, password })
-        : supabase.auth.signUp({
+        ? client.auth.signInWithPassword({ email, password })
+        : client.auth.signUp({
             email,
             password,
             options: { data: { full_name: name }, emailRedirectTo: window.location.origin },

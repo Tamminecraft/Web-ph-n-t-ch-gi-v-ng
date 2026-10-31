@@ -1,5 +1,8 @@
+import json
+import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 
 import numpy as np
 import pandas as pd
@@ -49,6 +52,44 @@ class TestPredictionApi(unittest.TestCase):
                 self.assertIn("baseline", payload)
                 self.assertEqual(payload["baseline"]["source"], "naive_last_value")
                 self.assertIn("model_metrics", payload)
+
+
+class TestChatApi(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(main.app)
+
+    def test_chat_reports_missing_api_key_as_service_unavailable(self):
+        with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
+            response = self.client.post("/chat", json={"messages": [{"role": "user", "text": "Xin chào"}]})
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("GEMINI_API_KEY", response.json()["detail"])
+
+    def test_chat_returns_provider_reply(self):
+        provider_response = MagicMock()
+        provider_response.__enter__.return_value = provider_response
+        provider_response.read.return_value = json.dumps({
+            "candidates": [{"content": {"parts": [{"text": "Xin chào bạn."}]}}],
+        }).encode("utf-8")
+        with (
+            patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False),
+            patch.object(main, "urlopen", return_value=provider_response),
+        ):
+            response = self.client.post("/chat", json={"messages": [{"role": "user", "text": "Xin chào"}]})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"reply": "Xin chào bạn."})
+
+    def test_chat_maps_provider_http_errors_to_bad_gateway(self):
+        provider_error = HTTPError("https://example.test", 404, "Not Found", {}, None)
+        with (
+            patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False),
+            patch.object(main, "urlopen", side_effect=provider_error),
+        ):
+            response = self.client.post("/chat", json={"messages": [{"role": "user", "text": "Xin chào"}]})
+
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("HTTP 404", response.json()["detail"])
 
 
 if __name__ == "__main__":

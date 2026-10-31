@@ -152,12 +152,21 @@ export function mockPredict(model: ModelType, days: number): PredictionResult {
   };
 }
 
+export function getApiBaseUrl(): string {
+  const configuredUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (configuredUrl) return configuredUrl.replace(/\/$/, "");
+  if (import.meta.env.PROD) {
+    throw new Error("Chưa cấu hình VITE_API_BASE_URL cho máy chủ API trong môi trường production.");
+  }
+  return "http://127.0.0.1:8000";
+}
+
 export async function fetchPrediction(
   model: ModelType,
   days: number,
   onStatus?: (message: string) => void,
 ): Promise<PredictionResult> {
-  const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+  const apiBaseUrl = getApiBaseUrl();
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -173,6 +182,7 @@ export async function fetchPrediction(
       const detail = await res.text().catch(() => "");
       throw new Error(`Backend trả về HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
     }
+
     onStatus?.("Đang xử lý dữ liệu và mô hình...");
     const data = await res.json();
     // If backend returns the compact shape used by this app, return it directly

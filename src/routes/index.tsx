@@ -47,6 +47,8 @@ function Index() {
 
   useEffect(() => {
     setHistory(loadHistory());
+    if (!supabase) return;
+
     supabase.auth.getSession().then(({ data }) => {
       const sessionUser = data.session?.user;
       if (sessionUser) {
@@ -104,7 +106,14 @@ function Index() {
       <Header
         user={user}
         onLogin={() => setAuthOpen(true)}
-        onLogout={async () => { await supabase.auth.signOut(); toast.success("Đã đăng xuất"); }}
+        onLogout={async () => {
+          if (!supabase) {
+            toast.error("Tính năng tài khoản chưa được cấu hình.");
+            return;
+          }
+          await supabase.auth.signOut();
+          toast.success("Đã đăng xuất");
+        }}
         onOpenHistory={() => setHistoryOpen(true)}
         historyCount={history.length}
       />

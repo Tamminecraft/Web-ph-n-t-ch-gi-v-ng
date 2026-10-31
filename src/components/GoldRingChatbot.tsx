@@ -1,10 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Send, X, Loader2 } from 'lucide-react';
+import { getApiBaseUrl } from '@/lib/gold';
 
-interface Msg { role: 'user' | 'model'; text: string; }
+interface Msg { role: 'user' | 'model'; text: string; error?: boolean; }
 
 const STORAGE_KEY = 'goldring_chat_history';
+
+function isMessage(value: unknown): value is Msg {
+  if (!value || typeof value !== 'object') return false;
+  const message = value as Record<string, unknown>;
+  return (message.role === 'user' || message.role === 'model')
+    && typeof message.text === 'string'
+    && (message.error === undefined || typeof message.error === 'boolean');
+}
 
 export default function GoldRingChatbot() {
   const { t } = useTranslation();
@@ -17,7 +26,19 @@ export default function GoldRingChatbot() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) setMessages(JSON.parse(saved));
+      if (saved) {
+        const parsed: unknown = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.every(isMessage)) {
+          setMessages(parsed.map(message =>
+            message.role === 'model'
+              && (message.text === 'Có lỗi xảy ra khi kết nối.' || message.text.startsWith('Chatbot gặp lỗi:'))
+              ? { ...message, error: true }
+              : message
+          ));
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      }
     } catch {
       localStorage.removeItem(STORAGE_KEY);
     }
@@ -37,18 +58,32 @@ export default function GoldRingChatbot() {
     setLoading(true);
 
     try {
-      const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const apiBaseUrl = getApiBaseUrl();
       const res = await fetch(`${apiBaseUrl}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({
+          messages: next.filter(message => !message.error).slice(-20).map(({ role, text }) => ({ role, text })),
+        }),
+        signal: AbortSignal.timeout(35000),
       });
-      if (!res.ok) throw new Error(`Chatbot request failed: ${res.status}`);
-      const data = await res.json();
-      const reply = data.reply ?? 'Ta đang bận suy ngẫm... hãy hỏi lại sau.';
+      const data: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const detail = data && typeof data === 'object' && 'detail' in data
+          && typeof data.detail === 'string'
+          ? data.detail
+          : `Máy chủ chatbot trả về lỗi HTTP ${res.status}.`;
+        throw new Error(detail);
+      }
+      if (!data || typeof data !== 'object' || !('reply' in data)
+        || typeof data.reply !== 'string' || !data.reply.trim()) {
+        throw new Error('Máy chủ chatbot không trả về câu trả lời hợp lệ.');
+      }
+      const reply = data.reply.trim();
       setMessages(m => [...m, { role: 'model', text: reply }]);
     } catch (e) {
-      setMessages(m => [...m, { role: 'model', text: 'Có lỗi xảy ra khi kết nối.' }]);
+      const message = e instanceof Error ? e.message : 'Lỗi không xác định.';
+      setMessages(m => [...m, { role: 'model', text: `Chatbot gặp lỗi: ${message}`, error: true }]);
     } finally { setLoading(false); }
   };
 
@@ -84,7 +119,9 @@ export default function GoldRingChatbot() {
               <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {m.role === 'model' && <div className="w-8 h-8 rounded-full bg-gradient-to-br from-yellow-400 to-amber-600 flex items-center justify-center text-sm shrink-0">💍</div>}
                 <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap ${
-                  m.role === 'user'
+                  m.error
+                    ? 'bg-red-50 border border-red-200 text-red-800 rounded-bl-sm'
+                    : m.role === 'user'
                     ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-white rounded-br-sm'
                     : 'bg-white border border-yellow-200 text-gray-800 rounded-bl-sm shadow-sm'
                 }`}>{m.text}</div>

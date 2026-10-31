@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import yfinance as yf
@@ -494,19 +494,19 @@ async def chat_with_gold_ring(payload: dict):
     """Proxy chatbot requests so the Gemini key is never exposed in the browser."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError("GEMINI_API_KEY chưa được cấu hình")
+        raise HTTPException(status_code=503, detail="Dịch vụ chatbot chưa được cấu hình GEMINI_API_KEY.")
 
     messages = payload.get("messages")
     if not isinstance(messages, list) or not messages:
-        raise ValueError("messages phải là một danh sách không rỗng")
+        raise HTTPException(status_code=422, detail="messages phải là một danh sách không rỗng.")
 
     contents = []
     for message in messages[-20:]:
         if not isinstance(message, dict) or message.get("role") not in {"user", "model"}:
-            raise ValueError("Tin nhắn không hợp lệ")
+            raise HTTPException(status_code=422, detail="Tin nhắn không hợp lệ.")
         text = message.get("text")
         if not isinstance(text, str) or not text.strip():
-            raise ValueError("Nội dung tin nhắn không hợp lệ")
+            raise HTTPException(status_code=422, detail="Nội dung tin nhắn không hợp lệ.")
         contents.append({"role": message["role"], "parts": [{"text": text.strip()}]})
 
     body = json.dumps({
@@ -517,7 +517,7 @@ async def chat_with_gold_ring(payload: dict):
         },
         "contents": contents,
     }).encode("utf-8")
-    model = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     request = Request(
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
         data=body,
@@ -527,11 +527,27 @@ async def chat_with_gold_ring(payload: dict):
     try:
         with urlopen(request, timeout=30) as response:
             data = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError) as exc:
-        raise RuntimeError("Không thể kết nối dịch vụ chatbot") from exc
+    except HTTPError as exc:
+        print(f"Gemini API trả về HTTP {exc.code}")
+        raise HTTPException(status_code=502, detail=f"Dịch vụ Gemini trả về HTTP {exc.code}.") from exc
+    except URLError as exc:
+        raise HTTPException(status_code=502, detail="Không thể kết nối dịch vụ chatbot.") from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=502, detail="Dịch vụ chatbot trả về dữ liệu không hợp lệ.") from exc
 
-    reply = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-    return {"reply": reply or "Ta đang bận suy ngẫm... hãy hỏi lại sau."}
+    candidates = data.get("candidates")
+    reply = ""
+    if isinstance(candidates, list) and candidates:
+        content = candidates[0].get("content", {})
+        parts = content.get("parts", []) if isinstance(content, dict) else []
+        if isinstance(parts, list):
+            reply = next(
+                (part.get("text", "") for part in parts if isinstance(part, dict) and isinstance(part.get("text"), str)),
+                "",
+            )
+    if not reply.strip():
+        raise HTTPException(status_code=502, detail="Dịch vụ chatbot không trả về câu trả lời.")
+    return {"reply": reply.strip()}
 
 
 if __name__ == "__main__":
