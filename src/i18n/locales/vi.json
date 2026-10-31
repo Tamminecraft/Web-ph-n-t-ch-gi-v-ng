@@ -14,7 +14,7 @@
     "welcome": "Xin chào! Ta là Chiếc Nhẫn Vàng thần kỳ. Ngươi muốn hỏi gì về thị trường vàng hôm nay?",
     "localModelNotice": "AI chạy trên thiết bị • lần đầu tải khoảng 700 MB",
     "loadingModel": "Đang khởi tạo AI trên thiết bị...",
-    "downloadingModel": "Đang tải mô hình AI ({progress}%)...",
+    "downloadingModel": "Đang tải mô hình AI ({{progress}}%)...",
     "modelReady": "AI đã sẵn sàng trên thiết bị",
     "webGpuUnsupported": "Trình duyệt hoặc thiết bị chưa hỗ trợ WebGPU. Hãy thử Chrome hoặc Edge mới trên máy tính có GPU tương thích.",
     "emptyResponse": "AI không tạo được câu trả lời. Vui lòng thử lại.",

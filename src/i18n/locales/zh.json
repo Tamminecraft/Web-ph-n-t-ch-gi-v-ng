@@ -14,7 +14,7 @@
     "welcome": "您好!我是神奇的黄金戒指。今天您想了解黄金市场的什么?",
     "localModelNotice": "AI 在本机运行 • 首次下载约 700 MB",
     "loadingModel": "正在启动本地 AI...",
-    "downloadingModel": "正在下载 AI 模型（{progress}%）...",
+    "downloadingModel": "正在下载 AI 模型（{{progress}}%）...",
     "modelReady": "本地 AI 已就绪",
     "webGpuUnsupported": "此浏览器或设备不支持 WebGPU。请在兼容的电脑上尝试新版 Chrome 或 Edge。",
     "emptyResponse": "AI 无法生成回复，请重试。",
