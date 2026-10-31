@@ -49,11 +49,11 @@ app.add_middleware(
 )
 
 APP_VERSION = os.getenv("APP_VERSION", os.getenv("RENDER_GIT_COMMIT", "local"))
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_OPENROUTER_MODEL = "google/gemini-2.5-flash"
 
 
-def get_gemini_model() -> str:
-    return os.getenv("GEMINI_MODEL", "").strip() or DEFAULT_GEMINI_MODEL
+def get_openrouter_model() -> str:
+    return os.getenv("OPENROUTER_MODEL", "").strip() or DEFAULT_OPENROUTER_MODEL
 
 
 @app.get("/health")
@@ -61,7 +61,8 @@ async def health():
     return {
         "status": "ok",
         "version": APP_VERSION,
-        "gemini_model": get_gemini_model(),
+        "chat_provider": "openrouter",
+        "chat_model": get_openrouter_model(),
         "models": {
             "LSTM": lstm_model is not None,
             "ARIMA": arima_model is not None,
@@ -501,37 +502,43 @@ async def predict_gold_price(request: PredictRequest):
 
 @app.post("/chat")
 async def chat_with_gold_ring(payload: dict):
-    """Proxy chatbot requests so the Gemini key is never exposed in the browser."""
-    api_key = os.getenv("GEMINI_API_KEY")
+    """Proxy chatbot requests so the OpenRouter key is never exposed in the browser."""
+    api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=503, detail="Dịch vụ chatbot chưa được cấu hình GEMINI_API_KEY.")
+        raise HTTPException(status_code=503, detail="Dịch vụ chatbot chưa được cấu hình OPENROUTER_API_KEY.")
 
     messages = payload.get("messages")
     if not isinstance(messages, list) or not messages:
         raise HTTPException(status_code=422, detail="messages phải là một danh sách không rỗng.")
 
-    contents = []
+    chat_messages = [{
+        "role": "system",
+        "content": "Bạn là chuyên gia phân tích thị trường vàng. Trả lời ngắn gọn bằng tiếng Việt, nêu rõ khi thông tin chỉ mang tính tham khảo và không đưa ra cam kết lợi nhuận.",
+    }]
     for message in messages[-20:]:
         if not isinstance(message, dict) or message.get("role") not in {"user", "model"}:
             raise HTTPException(status_code=422, detail="Tin nhắn không hợp lệ.")
         text = message.get("text")
         if not isinstance(text, str) or not text.strip():
             raise HTTPException(status_code=422, detail="Nội dung tin nhắn không hợp lệ.")
-        contents.append({"role": message["role"], "parts": [{"text": text.strip()}]})
+        chat_messages.append({
+            "role": "assistant" if message["role"] == "model" else "user",
+            "content": text.strip(),
+        })
 
     body = json.dumps({
-        "systemInstruction": {
-            "parts": [{
-                "text": "Bạn là chuyên gia phân tích thị trường vàng. Trả lời ngắn gọn bằng tiếng Việt, nêu rõ khi thông tin chỉ mang tính tham khảo và không đưa ra cam kết lợi nhuận."
-            }]
-        },
-        "contents": contents,
+        "model": get_openrouter_model(),
+        "messages": chat_messages,
     }).encode("utf-8")
-    model = get_gemini_model()
     request = Request(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
+        "https://openrouter.ai/api/v1/chat/completions",
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://goldprediction.netlify.app",
+            "X-Title": "Gold Predictor",
+        },
         method="POST",
     )
     try:
@@ -547,11 +554,8 @@ async def chat_with_gold_ring(payload: dict):
         except (UnicodeDecodeError, json.JSONDecodeError):
             pass
 
-        print(
-            f"Gemini API trả về HTTP {exc.code} cho model {model!r}"
-            + (f": {provider_message}" if provider_message else "")
-        )
-        detail = f"Dịch vụ Gemini trả về HTTP {exc.code} cho model {model!r}."
+        print(f"OpenRouter API trả về HTTP {exc.code}" + (f": {provider_message}" if provider_message else ""))
+        detail = f"Dịch vụ chatbot trả về HTTP {exc.code}."
         if provider_message:
             detail += f" Chi tiết: {provider_message}"
         raise HTTPException(status_code=502, detail=detail) from exc
@@ -560,15 +564,18 @@ async def chat_with_gold_ring(payload: dict):
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=502, detail="Dịch vụ chatbot trả về dữ liệu không hợp lệ.") from exc
 
-    candidates = data.get("candidates")
+    choices = data.get("choices") if isinstance(data, dict) else None
     reply = ""
-    if isinstance(candidates, list) and candidates:
-        content = candidates[0].get("content", {})
-        parts = content.get("parts", []) if isinstance(content, dict) else []
-        if isinstance(parts, list):
-            reply = next(
-                (part.get("text", "") for part in parts if isinstance(part, dict) and isinstance(part.get("text"), str)),
-                "",
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        response_message = choices[0].get("message")
+        content = response_message.get("content") if isinstance(response_message, dict) else None
+        if isinstance(content, str):
+            reply = content
+        elif isinstance(content, list):
+            reply = "".join(
+                item["text"]
+                for item in content
+                if isinstance(item, dict) and isinstance(item.get("text"), str)
             )
     if not reply.strip():
         raise HTTPException(status_code=502, detail="Dịch vụ chatbot không trả về câu trả lời.")

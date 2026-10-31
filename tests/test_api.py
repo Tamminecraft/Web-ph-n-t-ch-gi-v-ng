@@ -38,12 +38,13 @@ class TestPredictionApi(unittest.TestCase):
         self.assertEqual(response.json()["status"], "ok")
         self.assertIn("LSTM", response.json()["models"])
 
-    def test_health_reports_configured_gemini_model(self):
-        with patch.dict(os.environ, {"GEMINI_MODEL": "gemini-test-model"}):
+    def test_health_reports_configured_chat_provider_and_model(self):
+        with patch.dict(os.environ, {"OPENROUTER_MODEL": "test/model"}):
             response = self.client.get("/health")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["gemini_model"], "gemini-test-model")
+        self.assertEqual(response.json()["chat_provider"], "openrouter")
+        self.assertEqual(response.json()["chat_model"], "test/model")
 
     def test_predict_contract_for_all_models(self):
         for model in ("LSTM", "ARIMA", "LSTM_ARIMA"):
@@ -83,45 +84,70 @@ class TestChatApi(unittest.TestCase):
         )
         self.assertIn("POST", response.headers["access-control-allow-methods"])
 
-    def test_chat_reports_missing_api_key_as_service_unavailable(self):
-        with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
+    def test_chat_reports_missing_openrouter_key_as_service_unavailable(self):
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}):
             response = self.client.post("/chat", json={"messages": [{"role": "user", "text": "Xin chào"}]})
 
         self.assertEqual(response.status_code, 503)
-        self.assertIn("GEMINI_API_KEY", response.json()["detail"])
+        self.assertIn("OPENROUTER_API_KEY", response.json()["detail"])
 
     def test_chat_returns_provider_reply(self):
         provider_response = MagicMock()
         provider_response.__enter__.return_value = provider_response
         provider_response.read.return_value = json.dumps({
-            "candidates": [{"content": {"parts": [{"text": "Xin chào bạn."}]}}],
+            "choices": [{"message": {"content": "Xin chào bạn."}}],
         }).encode("utf-8")
         with (
-            patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False),
-            patch.object(main, "urlopen", return_value=provider_response),
+            patch.dict(
+                os.environ,
+                {
+                    "OPENROUTER_API_KEY": "test-key",
+                    "OPENROUTER_MODEL": "test/model",
+                },
+                clear=False,
+            ),
+            patch.object(main, "urlopen", return_value=provider_response) as urlopen,
         ):
-            response = self.client.post("/chat", json={"messages": [{"role": "user", "text": "Xin chào"}]})
+            response = self.client.post(
+                "/chat",
+                json={
+                    "messages": [
+                        {"role": "user", "text": "Xin chào"},
+                        {"role": "model", "text": "Xin chào bạn."},
+                        {"role": "user", "text": "Giá vàng hôm nay thế nào?"},
+                    ],
+                },
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"reply": "Xin chào bạn."})
+        request = urlopen.call_args.args[0]
+        request_body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(request.full_url, "https://openrouter.ai/api/v1/chat/completions")
+        self.assertEqual(request.get_header("Authorization"), "Bearer test-key")
+        self.assertEqual(request_body["model"], "test/model")
+        self.assertEqual(
+            [message["role"] for message in request_body["messages"]],
+            ["system", "user", "assistant", "user"],
+        )
 
     def test_chat_maps_provider_http_errors_to_bad_gateway(self):
         provider_error = HTTPError(
-            "https://example.test",
+            "https://openrouter.ai/api/v1/chat/completions",
             404,
             "Not Found",
             {},
-            BytesIO(b'{"error":{"message":"Model not found for generateContent"}}'),
+            BytesIO(b'{"error":{"message":"No provider can serve this request"}}'),
         )
         with (
-            patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False),
+            patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False),
             patch.object(main, "urlopen", side_effect=provider_error),
         ):
             response = self.client.post("/chat", json={"messages": [{"role": "user", "text": "Xin chào"}]})
 
         self.assertEqual(response.status_code, 502)
         self.assertIn("HTTP 404", response.json()["detail"])
-        self.assertIn("Model not found for generateContent", response.json()["detail"])
+        self.assertIn("No provider can serve this request", response.json()["detail"])
 
 
 if __name__ == "__main__":
