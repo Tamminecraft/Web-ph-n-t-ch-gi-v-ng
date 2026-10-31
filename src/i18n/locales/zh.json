@@ -12,12 +12,13 @@
     "title": "黄金戒指", "subtitle": "金融与黄金专家",
     "placeholder": "询问黄金、投资、经济...", "send": "发送",
     "welcome": "您好!我是神奇的黄金戒指。今天您想了解黄金市场的什么?",
-    "localModelNotice": "AI 在本机运行 • 首次下载约 700 MB",
+    "localModelNotice": "AI 在本机运行 • 首次下载约 840 MB",
     "loadingModel": "正在启动本地 AI...",
     "downloadingModel": "正在下载 AI 模型（{{progress}}%）...",
     "modelReady": "本地 AI 已就绪",
     "webGpuUnsupported": "此浏览器或设备不支持 WebGPU。请在兼容的电脑上尝试新版 Chrome 或 Edge。",
     "emptyResponse": "AI 无法生成回复，请重试。",
+    "invalidResponse": "AI 回复不清楚，请换一种方式提问。",
     "thinking": "正在思考..."
   }
 }

@@ -5,9 +5,10 @@ import type { MLCEngineInterface } from '@mlc-ai/web-llm';
 
 interface Msg { role: 'user' | 'model'; text: string; error?: boolean; }
 
-const STORAGE_KEY = 'goldring_chat_history';
-const MODEL_ID = 'Llama-3.2-1B-Instruct-q4f16_1-MLC';
-const SYSTEM_PROMPT = 'Bạn là chuyên gia phân tích thị trường vàng. Trả lời ngắn gọn bằng tiếng Việt, nêu rõ khi thông tin chỉ mang tính tham khảo và không đưa ra cam kết lợi nhuận.';
+const STORAGE_KEY = 'goldring_chat_history_v2';
+const LEGACY_STORAGE_KEY = 'goldring_chat_history';
+const MODEL_ID = 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC';
+const SYSTEM_PROMPT = 'Bạn là trợ lý tư vấn về vàng, trả lời tự nhiên, ngắn gọn và bằng tiếng Việt. Không bịa giá vàng hiện tại, số liệu, tin tức hay nguồn tham khảo. Nếu người dùng hỏi giá hiện tại hoặc dữ liệu bạn không biết, hãy nói rõ bạn không có dữ liệu thời gian thực. Mọi nhận định đầu tư chỉ mang tính tham khảo, không cam kết lợi nhuận.';
 
 function isMessage(value: unknown): value is Msg {
   if (!value || typeof value !== 'object') return false;
@@ -54,6 +55,7 @@ export default function GoldRingChatbot() {
 
   useEffect(() => {
     try {
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed: unknown = JSON.parse(saved);
@@ -95,12 +97,17 @@ export default function GoldRingChatbot() {
       }));
       const response = await engine.chat.completions.create({
         messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
-        temperature: 0.6,
-        max_tokens: 256,
+        temperature: 0.35,
+        top_p: 0.85,
+        frequency_penalty: 0.2,
+        max_tokens: 160,
       });
       const content = response.choices[0]?.message.content;
       const reply = typeof content === 'string' ? content.trim() : '';
-      if (!reply) throw new Error(t('chatbot.emptyResponse'));
+      const meaningfulCharacters = reply.match(/[\p{L}\p{N}]/gu)?.length ?? 0;
+      if (!reply || meaningfulCharacters < 4 || meaningfulCharacters / reply.length < 0.2) {
+        throw new Error(t('chatbot.invalidResponse'));
+      }
       setMessages(m => [...m, { role: 'model', text: reply }]);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Lỗi không xác định.';
@@ -146,7 +153,7 @@ export default function GoldRingChatbot() {
                     : m.role === 'user'
                     ? 'bg-gradient-to-r from-yellow-500 to-amber-500 text-white rounded-br-sm'
                     : 'bg-white border border-yellow-200 text-gray-800 rounded-bl-sm shadow-sm'
-                }`}>{m.text}</div>
+                } break-words [overflow-wrap:anywhere]`}>{m.text}</div>
               </div>
             ))}
             {loading && (

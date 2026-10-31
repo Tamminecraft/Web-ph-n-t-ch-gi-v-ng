@@ -12,12 +12,13 @@
     "title": "Golden Ring", "subtitle": "Finance & Gold Expert",
     "placeholder": "Ask about gold, investment, economy...", "send": "Send",
     "welcome": "Greetings! I am the Magical Golden Ring. What would you like to know about the gold market today?",
-    "localModelNotice": "AI runs on your device • first download is about 700 MB",
+    "localModelNotice": "AI runs on your device • first download is about 840 MB",
     "loadingModel": "Starting on-device AI...",
     "downloadingModel": "Downloading AI model ({{progress}}%)...",
     "modelReady": "On-device AI is ready",
     "webGpuUnsupported": "This browser or device does not support WebGPU. Try a recent Chrome or Edge browser on a compatible computer.",
     "emptyResponse": "The AI could not generate a reply. Please try again.",
+    "invalidResponse": "The AI generated an unclear reply. Please try asking another way.",
     "thinking": "Thinking..."
   }
 }
