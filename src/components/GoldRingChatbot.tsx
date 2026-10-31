@@ -8,7 +8,20 @@ interface Msg { role: 'user' | 'model'; text: string; error?: boolean; }
 const STORAGE_KEY = 'goldring_chat_history_v2';
 const LEGACY_STORAGE_KEY = 'goldring_chat_history';
 const MODEL_ID = 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC';
-const SYSTEM_PROMPT = 'Bạn là trợ lý tư vấn về vàng, trả lời tự nhiên, ngắn gọn và bằng tiếng Việt. Không bịa giá vàng hiện tại, số liệu, tin tức hay nguồn tham khảo. Nếu người dùng hỏi giá hiện tại hoặc dữ liệu bạn không biết, hãy nói rõ bạn không có dữ liệu thời gian thực. Mọi nhận định đầu tư chỉ mang tính tham khảo, không cam kết lợi nhuận.';
+const SYSTEM_PROMPT = 'Chỉ trả lời bằng tiếng Việt có dấu, tự nhiên và ngắn gọn. Không chèn ký tự lạ, không lặp dấu câu, không đổi sang ngôn ngữ khác. Bạn là trợ lý tư vấn về vàng. Không bịa giá vàng hiện tại, số liệu, tin tức hay nguồn tham khảo. Nếu người dùng hỏi giá hiện tại hoặc dữ liệu bạn không biết, hãy nói rõ bạn không có dữ liệu thời gian thực. Mọi nhận định đầu tư chỉ mang tính tham khảo, không cam kết lợi nhuận.';
+
+function isValidVietnameseReply(reply: string): boolean {
+  const letters = reply.match(/\p{L}/gu) ?? [];
+  const latinLetters = letters.filter(letter => /\p{Script=Latin}/u.test(letter)).length;
+  const hasVietnamese = /[ăâđêôơưĂÂĐÊÔƠƯàáạảãằắặẳẵầấậẩẫèéẹẻẽềếệểễìíịỉĩòóọỏõồốộổỗờớợởỡùúụủũừứựửữỳýỵỷỹ]/u.test(reply);
+  const repeatsPunctuation = /([!?.,])\1{4,}/u.test(reply);
+
+  return letters.length >= 4
+    && latinLetters === letters.length
+    && hasVietnamese
+    && !repeatsPunctuation
+    && (reply.match(/[\p{L}\p{N}]/gu)?.length ?? 0) / reply.length >= 0.5;
+}
 
 function isMessage(value: unknown): value is Msg {
   if (!value || typeof value !== 'object') return false;
@@ -104,8 +117,7 @@ export default function GoldRingChatbot() {
       });
       const content = response.choices[0]?.message.content;
       const reply = typeof content === 'string' ? content.trim() : '';
-      const meaningfulCharacters = reply.match(/[\p{L}\p{N}]/gu)?.length ?? 0;
-      if (!reply || meaningfulCharacters < 4 || meaningfulCharacters / reply.length < 0.2) {
+      if (!isValidVietnameseReply(reply)) {
         throw new Error(t('chatbot.invalidResponse'));
       }
       setMessages(m => [...m, { role: 'model', text: reply }]);
