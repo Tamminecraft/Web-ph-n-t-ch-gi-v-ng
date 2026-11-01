@@ -10,17 +10,8 @@ const PREVIOUS_STORAGE_KEYS = ['goldring_chat_history', 'goldring_chat_history_v
 const MODEL_ID = 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC';
 const SYSTEM_PROMPT = 'Chỉ trả lời bằng tiếng Việt có dấu, tự nhiên và ngắn gọn. Không chèn ký tự lạ, không lặp dấu câu, không đổi sang ngôn ngữ khác. Bạn là trợ lý tư vấn về vàng. Không bịa giá vàng hiện tại, số liệu, tin tức hay nguồn tham khảo. Nếu người dùng hỏi giá hiện tại hoặc dữ liệu bạn không biết, hãy nói rõ bạn không có dữ liệu thời gian thực. Mọi nhận định đầu tư chỉ mang tính tham khảo, không cam kết lợi nhuận.';
 
-function isValidVietnameseReply(reply: string): boolean {
-  const letters = reply.match(/\p{L}/gu) ?? [];
-  const latinLetters = letters.filter(letter => /\p{Script=Latin}/u.test(letter)).length;
-  const hasVietnamese = /[ăâđêôơưĂÂĐÊÔƠƯàáạảãằắặẳẵầấậẩẫèéẹẻẽềếệểễìíịỉĩòóọỏõồốộổỗờớợởỡùúụủũừứựửữỳýỵỷỹ]/u.test(reply);
-  const repeatsPunctuation = /([!?.,])\1{4,}/u.test(reply);
-
-  return letters.length >= 4
-    && latinLetters === letters.length
-    && hasVietnamese
-    && !repeatsPunctuation
-    && (reply.match(/[\p{L}\p{N}]/gu)?.length ?? 0) / reply.length >= 0.5;
+function hasReadableReply(reply: string): boolean {
+  return /[\p{L}\p{N}]/u.test(reply);
 }
 
 function isMessage(value: unknown): value is Msg {
@@ -94,7 +85,7 @@ export default function GoldRingChatbot() {
             if (message.role !== 'model') return message;
             const isLegacyError = message.text === 'Có lỗi xảy ra khi kết nối.'
               || message.text.startsWith('Chatbot gặp lỗi:');
-            return isLegacyError || !isValidVietnameseReply(message.text)
+            return isLegacyError
               ? { ...message, error: true }
               : message;
           }));
@@ -124,7 +115,7 @@ export default function GoldRingChatbot() {
       const engine = await getEngine();
       setModelStatus(t('chatbot.thinking'));
       const history = next
-        .filter(message => !message.error && (message.role === 'user' || isValidVietnameseReply(message.text)))
+        .filter(message => !message.error && (message.role === 'user' || hasReadableReply(message.text)))
         .slice(-12)
         .map(({ role, text }) => ({
         role: role === 'model' ? 'assistant' as const : 'user' as const,
@@ -135,12 +126,13 @@ export default function GoldRingChatbot() {
         temperature: 0.35,
         top_p: 0.85,
         frequency_penalty: 0.2,
+        presence_penalty: 0,
         max_tokens: 160,
       });
       const content = response.choices[0]?.message.content;
       const reply = typeof content === 'string' ? content.trim() : '';
-      if (!isValidVietnameseReply(reply)) {
-        throw new Error(t('chatbot.invalidResponse'));
+      if (!hasReadableReply(reply)) {
+        throw new Error(t('chatbot.emptyResponse'));
       }
       setMessages(m => [...m, { role: 'model', text: reply }]);
     } catch (e) {
