@@ -69,7 +69,7 @@ export default async (request) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: process.env.GROQ_MODEL?.trim() || "llama-3.3-70b-versatile",
+        model: process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-120b",
         messages,
         temperature: 0.35,
         max_tokens: 300,
@@ -88,6 +88,11 @@ export default async (request) => {
   }
   if (providerResponse.status === 401 || providerResponse.status === 403) {
     return jsonResponse(503, { detail: "API key AI trên Netlify không hợp lệ hoặc chưa được cấp quyền." });
+  }
+  if (providerResponse.status === 404) {
+    return jsonResponse(502, {
+      detail: "Mô hình AI không tồn tại hoặc đã ngừng hỗ trợ. Hãy kiểm tra biến GROQ_MODEL trên Netlify.",
+    });
   }
   if (!providerResponse.ok) {
     return jsonResponse(502, { detail: `Dịch vụ AI trả về lỗi HTTP ${providerResponse.status}.` });
