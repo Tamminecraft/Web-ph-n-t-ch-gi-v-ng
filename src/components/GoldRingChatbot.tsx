@@ -1,17 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Send, X, Loader2 } from 'lucide-react';
-import type { MLCEngineInterface } from '@mlc-ai/web-llm';
 
 interface Msg { role: 'user' | 'model'; text: string; error?: boolean; }
 
 const STORAGE_KEY = 'goldring_chat_history_v3';
 const PREVIOUS_STORAGE_KEYS = ['goldring_chat_history', 'goldring_chat_history_v2'];
-const MODEL_ID = 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC';
-const SYSTEM_PROMPT = 'Chỉ trả lời bằng tiếng Việt có dấu, tự nhiên và ngắn gọn. Không chèn ký tự lạ, không lặp dấu câu, không đổi sang ngôn ngữ khác. Bạn là trợ lý tư vấn về vàng. Không bịa giá vàng hiện tại, số liệu, tin tức hay nguồn tham khảo. Nếu người dùng hỏi giá hiện tại hoặc dữ liệu bạn không biết, hãy nói rõ bạn không có dữ liệu thời gian thực. Mọi nhận định đầu tư chỉ mang tính tham khảo, không cam kết lợi nhuận.';
 
 function hasReadableReply(reply: string): boolean {
   return /[\p{L}\p{N}]/u.test(reply);
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message || error.name || fallback;
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error && typeof error === 'object') {
+    const details = error as Record<string, unknown>;
+    if (typeof details.message === 'string' && details.message.trim()) return details.message;
+    if (typeof details.name === 'string' && details.name.trim()) return details.name;
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== '{}') return serialized;
+    } catch {
+      return String(error);
+    }
+  }
+  return `${fallback} (${String(error)})`;
 }
 
 function isMessage(value: unknown): value is Msg {
@@ -29,50 +43,7 @@ export default function GoldRingChatbot() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [modelStatus, setModelStatus] = useState('');
-  const [modelProgress, setModelProgress] = useState<number | null>(null);
-  const [modelError, setModelError] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const engineRef = useRef<MLCEngineInterface | null>(null);
-
-  const getEngine = async (): Promise<MLCEngineInterface> => {
-    if (engineRef.current) return engineRef.current;
-    setModelError('');
-    setModelProgress(null);
-    setModelStatus(t('chatbot.checkingWebGPU'));
-    let worker: Worker | undefined;
-    try {
-      const gpu = Reflect.get(navigator, 'gpu') as
-        | { requestAdapter?: () => Promise<unknown> }
-        | undefined;
-      if (!window.isSecureContext || typeof gpu?.requestAdapter !== 'function') {
-        throw new Error(t('chatbot.webGpuUnsupported'));
-      }
-      if (!await gpu.requestAdapter()) {
-        throw new Error(t('chatbot.webGpuAdapterUnavailable'));
-      }
-
-      setModelStatus(t('chatbot.loadingModel'));
-      worker = new Worker(new URL('../workers/webllm.worker.ts', import.meta.url), { type: 'module' });
-      const { CreateWebWorkerMLCEngine } = await import('@mlc-ai/web-llm');
-      const engine = await CreateWebWorkerMLCEngine(worker, MODEL_ID, {
-        initProgressCallback: ({ progress }) => {
-          const percent = Math.round(progress * 100);
-          setModelProgress(percent);
-          setModelStatus(t('chatbot.downloadingModel', { progress: percent }));
-        },
-      });
-      engineRef.current = engine;
-      setModelProgress(100);
-      setModelStatus(t('chatbot.modelReady'));
-      return engine;
-    } catch (error) {
-      worker?.terminate();
-      setModelProgress(null);
-      setModelStatus('');
-      setModelError(error instanceof Error ? error.message : t('chatbot.unknownError'));
-      throw error;
-    }
-  };
 
   useEffect(() => {
     try {
@@ -110,37 +81,48 @@ export default function GoldRingChatbot() {
     const next = [...messages, { role: 'user' as const, text: userMsg }];
     setMessages(next);
     setLoading(true);
+    setModelStatus(t('chatbot.thinking'));
 
     try {
-      const engine = await getEngine();
-      setModelStatus(t('chatbot.thinking'));
       const history = next
         .filter(message => !message.error && (message.role === 'user' || hasReadableReply(message.text)))
         .slice(-12)
         .map(({ role, text }) => ({
-        role: role === 'model' ? 'assistant' as const : 'user' as const,
-        content: text,
-      }));
-      const response = await engine.chat.completions.create({
-        messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...history],
-        temperature: 0.35,
-        top_p: 0.85,
-        frequency_penalty: 0.2,
-        presence_penalty: 0,
-        max_tokens: 160,
+          role: role === 'model' ? 'assistant' as const : 'user' as const,
+          content: text,
+        }));
+      const response = await fetch('/.netlify/functions/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: history }),
+        signal: AbortSignal.timeout(60000),
       });
-      const content = response.choices[0]?.message.content;
-      const reply = typeof content === 'string' ? content.trim() : '';
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(t('chatbot.invalidServerResponse'));
+      }
+      if (!response.ok) {
+        const detail = payload && typeof payload === 'object'
+          ? (payload as Record<string, unknown>).detail
+          : null;
+        throw new Error(typeof detail === 'string' ? detail : t('chatbot.requestFailed'));
+      }
+      const replyValue = payload && typeof payload === 'object'
+        ? (payload as Record<string, unknown>).reply
+        : null;
+      const reply = typeof replyValue === 'string' ? replyValue.trim() : '';
       if (!hasReadableReply(reply)) {
         throw new Error(t('chatbot.emptyResponse'));
       }
       setMessages(m => [...m, { role: 'model', text: reply }]);
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Lỗi không xác định.';
+      const message = getErrorMessage(e, 'Lỗi không xác định.');
       setMessages(m => [...m, { role: 'model', text: `Chatbot gặp lỗi: ${message}`, error: true }]);
     } finally {
       setLoading(false);
-      if (engineRef.current) setModelStatus(t('chatbot.modelReady'));
+      setModelStatus('');
     }
   };
 
@@ -166,27 +148,12 @@ export default function GoldRingChatbot() {
                 <div className="font-bold">{t('chatbot.title')}</div>
                 <div className="text-xs opacity-90">{t('chatbot.subtitle')}</div>
                 <div className="text-[10px] opacity-80" aria-live="polite">
-                  {modelStatus || t('chatbot.localModelNotice')}
+                  {modelStatus || t('chatbot.cloudModelNotice')}
                 </div>
               </div>
             </div>
             <button onClick={() => setOpen(false)} className="hover:bg-white/20 rounded-full p-1"><X size={20} /></button>
           </div>
-
-          {modelError && (
-            <div role="alert" className="border-b border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">
-              <div className="font-semibold">{t('chatbot.modelLoadError')}</div>
-              <div className="mt-1 break-words">{modelError}</div>
-              <p className="mt-2">{t('chatbot.troubleshooting')}</p>
-              <button
-                type="button"
-                onClick={() => setModelError('')}
-                className="mt-2 underline underline-offset-2"
-              >
-                {t('chatbot.dismissError')}
-              </button>
-            </div>
-          )}
 
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-yellow-50/30">
@@ -210,22 +177,6 @@ export default function GoldRingChatbot() {
                     <Loader2 className="animate-spin text-yellow-600" size={16} />
                     <span className="text-xs text-gray-500">{modelStatus || t('chatbot.thinking')}</span>
                   </div>
-                  {modelProgress !== null && (
-                    <div aria-live="polite">
-                      <div className="h-1.5 overflow-hidden rounded-full bg-yellow-100">
-                        <div
-                          role="progressbar"
-                          aria-label={t('chatbot.modelDownloadProgress')}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                          aria-valuenow={modelProgress}
-                          className="h-full bg-amber-500 transition-[width]"
-                          style={{ width: `${modelProgress}%` }}
-                        />
-                      </div>
-                      <p className="mt-1 text-[10px] text-gray-500">{t('chatbot.firstDownloadNotice')}</p>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
